@@ -25,12 +25,13 @@ now, after I1 and I2 are both complete, satisfying that gate.
 | `uv run ruff check .` | clean |
 | `uv run ruff format --check .` | clean |
 | `uv run pytest tests/unit` | 998 passed |
-| `uv run pytest tests/integration` | 281 passed |
+| `uv run pytest tests/integration` | 285 passed |
 
-281 integration tests = the 277 I2.3 baseline (`docs/specifications/0.4.2/i2-completion-record.md`)
-+ 4 new in this same I3.1 slice: 1 consolidated zero-write completion-gate test (below) + 2
-`read_revision_fence.py` helper tests + 1 `mcp-demo.sh` invalid-`BUILD_REVISION` rejection test —
-none of which are I1 regressions; they're new I3.1 coverage landing in the same commit range.
+285 integration tests = the 277 I2.3 baseline (`docs/specifications/0.4.2/i2-completion-record.md`)
++ 8 new in this same I3.1 slice: 1 consolidated zero-write completion-gate test (below) + 6
+`read_revision_fence.py` helper tests (2 original + 4 parametrized corrupted-revision cases added
+during PR #141 review) + 1 `mcp-demo.sh` invalid-`BUILD_REVISION` rejection test — none of which are
+I1 regressions; they're new I3.1 coverage landing in the same commit range.
 
 ## I1 §3.1 required items
 
