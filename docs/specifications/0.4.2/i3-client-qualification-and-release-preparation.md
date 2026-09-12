@@ -349,11 +349,24 @@ candidate image digest, where applicable
 ```
 
 Every release-candidate and final-release image build SHALL inject the exact full
-`RELEASE_CANDIDATE_SHA` at build time. The canonical build argument is:
+`RELEASE_CANDIDATE_SHA` at build time. This is a two-level contract, implemented in I3.1
+(`examples/runtime-demo/mcp-demo.sh`):
 
 ```text
-BUILD_REVISION=<RELEASE_CANDIDATE_SHA>
+BUILD_REVISION=<RELEASE_CANDIDATE_SHA>   # mcp-demo.sh's own external input alias
 ```
+
+`BUILD_REVISION` is `mcp-demo.sh`'s own CLI-facing input name — chosen to match this spec's own
+qualification-run invocation below, not a Docker build argument. `mcp-demo.sh` forwards it internally
+as the Docker build argument already shipped and consumed by the Dockerfile, `app/mcp/wiring.py`, and
+`.github/workflows/docker.yml`'s release build:
+
+```text
+AIP_BUILD_REVISION=<RELEASE_CANDIDATE_SHA>   # the actual Docker build argument
+```
+
+A release operator invokes the script with `BUILD_REVISION`; nothing outside `mcp-demo.sh` ever needs
+to know that name.
 
 The application SHALL expose that value as `producer.build_revision` in every Architecture Answer
 response that contains producer metadata. `unknown`, an abbreviated SHA, a branch name, or a dirty
@@ -595,8 +608,10 @@ export RELEASE_CANDIDATE_SHA="$(git rev-parse HEAD)"
 BUILD_REVISION="$RELEASE_CANDIDATE_SHA" ./examples/runtime-demo/mcp-demo.sh --serve
 ```
 
-`mcp-demo.sh` SHALL forward `BUILD_REVISION` as the image build argument of the same name and fail
-before serving if it is missing, not a full commit SHA, or differs from `RELEASE_CANDIDATE_SHA`.
+`mcp-demo.sh` SHALL forward `BUILD_REVISION` as the `AIP_BUILD_REVISION` Docker build argument (§4.3's
+two-level contract: `BUILD_REVISION` is the script's own input alias, not the build argument's name)
+and fail before serving if it is missing, not a full commit SHA, or differs from
+`RELEASE_CANDIDATE_SHA`.
 
 Default release-gating procedure:
 
@@ -1801,7 +1816,7 @@ attempt number
 start/end time
 conclusion
 artifact/image digest where applicable
-injected BUILD_REVISION
+injected AIP_BUILD_REVISION (the release workflow's own Docker build argument - §4.3)
 ```
 
 If rerun, preserve all attempts and explain why.
