@@ -22,7 +22,10 @@
 # (v0.4.2 I3, spec §6.1) Optional: set BUILD_REVISION to a full 40-character candidate commit SHA to
 # pin the built image's producer.build_revision for release-gating actual-client qualification, e.g.:
 #   BUILD_REVISION="$(git rev-parse HEAD)" examples/runtime-demo/mcp-demo.sh --serve
-# Unset by default, leaving everyday demo usage unaffected.
+# Unset by default, leaving everyday demo usage unaffected. If the caller also exports
+# RELEASE_CANDIDATE_SHA (the spec's own canonical release-gating invocation exports it first, then
+# sets BUILD_REVISION from it), this becomes a release-gating run: BUILD_REVISION then becomes
+# mandatory and must exactly equal RELEASE_CANDIDATE_SHA, or the script fails before serving.
 
 set -euo pipefail
 
@@ -36,6 +39,7 @@ AIP_URL="${AIP_URL:-http://localhost:8000}"
 # that the Dockerfile/app already consume - never a second, differently-named production contract.
 # Unset (the default) leaves everyday demo usage exactly as before this change.
 BUILD_REVISION="${BUILD_REVISION:-}"
+RELEASE_CANDIDATE_SHA="${RELEASE_CANDIDATE_SHA:-}"
 _BUILD_REVISION_PATTERN='^[0-9a-f]{40}$'
 
 # Frozen to match seed_frozen_evidence.py's SEED_TIMESTAMP (2026-08-26T12:00:00Z). Never derive
@@ -92,6 +96,19 @@ validate_prerequisites() {
   if [[ -n "${BUILD_REVISION}" && ! "${BUILD_REVISION}" =~ ${_BUILD_REVISION_PATTERN} ]]; then
     echo "error: BUILD_REVISION must be a full 40-character lowercase hex commit SHA, got: ${BUILD_REVISION}" >&2
     exit 1
+  fi
+  # spec §6.1: a release-gating run (RELEASE_CANDIDATE_SHA present) requires BUILD_REVISION and
+  # requires it to exactly match - everyday demo usage never sets RELEASE_CANDIDATE_SHA, so this
+  # adds no requirement there.
+  if [[ -n "${RELEASE_CANDIDATE_SHA}" ]]; then
+    if [[ -z "${BUILD_REVISION}" ]]; then
+      echo "error: RELEASE_CANDIDATE_SHA is set but BUILD_REVISION is missing - release-gating runs require: BUILD_REVISION=\"\${RELEASE_CANDIDATE_SHA}\" $0 --serve" >&2
+      exit 1
+    fi
+    if [[ "${BUILD_REVISION}" != "${RELEASE_CANDIDATE_SHA}" ]]; then
+      echo "error: BUILD_REVISION (${BUILD_REVISION}) differs from RELEASE_CANDIDATE_SHA (${RELEASE_CANDIDATE_SHA})" >&2
+      exit 1
+    fi
   fi
 }
 

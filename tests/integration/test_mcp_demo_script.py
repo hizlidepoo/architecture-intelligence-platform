@@ -261,6 +261,26 @@ class TestPrerequisiteFailures:
         assert result.returncode != 0
         assert "BUILD_REVISION" in result.stderr
 
+    def test_release_gating_run_without_build_revision_exits_nonzero(self, tmp_path):
+        # spec §6.1: RELEASE_CANDIDATE_SHA present but BUILD_REVISION missing must fail before
+        # serving - the canonical release-gating invocation always sets both together.
+        _ensure_env_file()
+        result = _run_script("--serve", timeout=15, env=_env(RELEASE_CANDIDATE_SHA="a" * 40))
+        assert result.returncode != 0
+        assert "BUILD_REVISION" in result.stderr
+        assert "RELEASE_CANDIDATE_SHA" in result.stderr
+
+    def test_release_gating_run_with_mismatched_build_revision_exits_nonzero(self, tmp_path):
+        # spec §6.1: BUILD_REVISION must exactly equal RELEASE_CANDIDATE_SHA in a release-gating run.
+        _ensure_env_file()
+        result = _run_script(
+            "--serve",
+            timeout=15,
+            env=_env(BUILD_REVISION="a" * 40, RELEASE_CANDIDATE_SHA="b" * 40),
+        )
+        assert result.returncode != 0
+        assert "differs from" in result.stderr
+
 
 class TestServeLifecycle:
     def test_full_lifecycle(self, clean_demo_stack):
