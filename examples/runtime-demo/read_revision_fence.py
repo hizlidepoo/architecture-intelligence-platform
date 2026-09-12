@@ -19,12 +19,17 @@ and a separate `get_architecture_drift` call, each its own round trip), this hel
 could land "between" reads, so it does not need that file's bounded discard-and-retry loop.
 
 A missing `(:AipInternalState)` singleton is a legitimate state on a virgin/EMPTY database (spec
-§15.2), not a fencing failure, so it is reported as `{"revision": null}` with exit code 0 rather than
-as an error - "fail safely on missing/invalid revision state" (spec §6.3) means never crash or attempt
-repair, not that a legitimately empty fence must look like a script failure to a caller checking exit
-codes. This helper cannot distinguish a legitimately empty database from a corrupted/partial one (both
-raise the same `RevisionSingletonMissing` from `read_revision`) - a caller needing that distinction
-must use `check_fixture_state.py`'s full EMPTY/COMPLETE/PARTIAL_OR_INCOMPATIBLE classification instead.
+§15.2), not a fencing failure, so it is reported as `{"revision": null}` with exit code 0. But
+`read_revision` raises the *same* `RevisionSingletonMissing` for a genuinely corrupted singleton (an
+existing node with a null/non-integer/negative/boolean `revision` value) as it does for "no singleton
+at all" - so this helper cannot tell those two cases apart from `read_revision` alone, and must not
+silently report a corrupted fence as the same `{"revision": null}` used for a legitimately empty
+database (spec §6.3: "fail safely on missing/invalid revision state" means never crash or attempt
+repair, but it does not mean masking a real corruption as a successful empty read - a caller comparing
+`revision_before == revision_after == null` must not be able to accept a client run against a fence it
+can't actually trust). It disambiguates the same way `check_fixture_state.py` already does: a true
+whole-database node count of `0` is the only thing that makes a missing/invalid revision legitimate;
+anything else is reported as a failure.
 """
 
 from __future__ import annotations
@@ -46,6 +51,14 @@ from app.settings import load_settings
 
 _CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "config.yaml"))
 
+_TOTAL_NODE_COUNT_QUERY = "MATCH (n) RETURN count(n) AS count"
+
+
+class RevisionFenceInvalid(RuntimeError):
+    """Raised when the database is non-empty but has no valid `(:AipInternalState)` revision - a
+    real corruption, never reported as the same `{"revision": null}` used for a legitimately virgin
+    database."""
+
 
 def read_revision_fence(driver, *, database: str) -> dict[str, int | None]:
     """The Neo4j-backed half of this tool, factored out from `run()` so integration tests can drive
@@ -54,8 +67,13 @@ def read_revision_fence(driver, *, database: str) -> dict[str, int | None]:
     with open_session(driver, database=database, read_only=True) as session:
         try:
             return {"revision": read_revision(session)}
-        except RevisionSingletonMissing:
-            return {"revision": None}
+        except RevisionSingletonMissing as exc:
+            node_count = session.run(_TOTAL_NODE_COUNT_QUERY).single()["count"]
+            if node_count == 0:
+                return {"revision": None}
+            raise RevisionFenceInvalid(
+                f"database contains {node_count} node(s) but has no valid revision fence: {exc}"
+            ) from exc
 
 
 def run() -> dict[str, int | None]:
@@ -79,7 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.parse_args(argv)
 
-    result = run()
+    try:
+        result = run()
+    except RevisionFenceInvalid as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        return 1
+
     print(json.dumps(result, sort_keys=True))
     return 0
 

@@ -57,3 +57,35 @@ def test_reports_null_and_creates_no_singleton_on_a_virgin_database(driver):
 
     assert result == {"revision": None}
     assert _whole_database_node_count(driver) == 0  # "create no singleton" (spec §6.3)
+
+
+@pytest.mark.parametrize("bad_revision", [None, "not-a-number", -1, True])
+def test_raises_rather_than_reports_null_for_a_corrupted_revision_on_a_non_empty_database(
+    driver, bad_revision
+):
+    """A missing/invalid revision on a *non-empty* database is a real corruption, not a legitimate
+    empty-database read - it must never be silently reported as the same {"revision": null} a virgin
+    database gets, and it must not be repaired (spec §6.3: "repair no state")."""
+    from app.graph.schema import ensure_schema
+
+    with driver.session(database=DATABASE) as session:
+        ensure_schema(session)
+        if bad_revision is None:
+            session.run("MATCH (s:AipInternalState {id: 'architecture'}) REMOVE s.revision")
+        else:
+            session.run(
+                "MATCH (s:AipInternalState {id: 'architecture'}) SET s.revision = $value",
+                value=bad_revision,
+            )
+
+    assert _whole_database_node_count(driver) > 0
+
+    with pytest.raises(read_revision_fence_module.RevisionFenceInvalid):
+        read_revision_fence_module.read_revision_fence(driver, database=DATABASE)
+
+    # No repair: the corrupted property is exactly as this test left it.
+    with driver.session(database=DATABASE) as session:
+        record = session.run(
+            "MATCH (s:AipInternalState {id: 'architecture'}) RETURN s.revision AS revision"
+        ).single()
+        assert record["revision"] == bad_revision
