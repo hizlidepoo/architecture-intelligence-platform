@@ -53,12 +53,22 @@ revision fence `R = 9`.
 
 ## Attempt record (spec §6.5/§6.6)
 
-| Attempt | Classification | Outcome |
-|---|---|---|
-| 0 | `CLIENT_CONTROL_FAILURE` | `codex exec --json -s read-only -C <scratch-dir> - < prompt.txt` (no `--skip-git-repo-check`) refused to start: `"Not inside a trusted directory and --skip-git-repo-check was not specified."` AIP/demo/network/fixture prerequisites were healthy at that moment (the server was up and serving, confirmed by the very next attempt succeeding against it unmodified); the official client itself could not issue the required call, matching §6.6's `CLIENT_CONTROL_FAILURE` definition exactly. Per §6.5 (Deterministic client control) / the general failure-taxonomy rule, this **fails the tuple** as of this attempt. |
-| 1 (fresh cycle, after correction) | — | Configuration corrected — the invocation was missing the required `--skip-git-repo-check` flag because the working directory used for `codex exec` was a plain scratch directory outside any git repository, not because of any AIP/server/fixture problem. Qualification was restarted as a fresh cycle with the corrected invocation: `codex exec --json --skip-git-repo-check -s read-only -C <scratch-dir> - < prompt.txt` (Appendix A.1 fixed prompt). Full success: called `get_architecture_drift` then `get_evidence` twice (once per finding), using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
+| Cycle | Attempt | Classification | Outcome |
+|---|---|---|---|
+| 1 | 1 | `CLIENT_CONTROL_FAILURE` | `codex exec --json -s read-only -C <scratch-dir> - < prompt.txt` (no `--skip-git-repo-check`) refused to start: `"Not inside a trusted directory and --skip-git-repo-check was not specified."` AIP/demo/network/fixture prerequisites were healthy at that moment (the server was up and serving, confirmed by the very next attempt succeeding against it unmodified); the official client itself could not issue the required call, matching §6.6's `CLIENT_CONTROL_FAILURE` definition exactly. This is itself a **valid client attempt** (§6.5's definition turns on prerequisite health, not on which failure mode occurs) that **fails cycle 1's tuple** outright. |
+| 2 | 1 | — | Configuration corrected — the invocation was missing the required `--skip-git-repo-check` flag because the working directory used for `codex exec` was a plain scratch directory outside any git repository, not because of any AIP/server/fixture problem. Qualification was restarted as a fresh cycle with the corrected invocation: `codex exec --json --skip-git-repo-check -s read-only -C <scratch-dir> - < prompt.txt` (Appendix A.1 fixed prompt). Full success: called `get_architecture_drift` then `get_evidence` twice (once per finding), using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
 
-Attempt 0 never reached AIP, the fixture, or the client's MCP subsystem at all (it failed at Codex's own local trust-gate before opening any network connection), so the pre-client state recorded above (§6.2/§6.3, taken once before either invocation) remains valid for attempt 1 unmodified — no re-baseline was needed. One valid client attempt (attempt 1) is consumed, within the LLM-mediated budget of 2 (spec §6.5). No infrastructure-invalidated runs occurred (attempt 0 is a client-control failure, not an AIP/server/network/fixture prerequisite failure, so it does not fall under §6.5's infrastructure-retry-budget accounting either).
+Cycle 1's attempt never reached AIP, the fixture, or the client's MCP subsystem at all (it failed at
+Codex's own local trust-gate before opening any network connection), so the pre-client state recorded
+above (§6.2/§6.3, taken once before cycle 1 started) remained valid for cycle 2 unmodified — no
+re-baseline was needed. Recorded per cycle, not aggregated away: **cycle 1 consumed one valid attempt
+and failed** (`CLIENT_CONTROL_FAILURE`); **after the recorded configuration correction, cycle 2
+consumed one valid attempt and qualified**. Two valid client attempts total across both cycles, each
+individually within the LLM-mediated per-cycle budget of 2 (spec §6.5) — cycle 1 never needed a second
+attempt within itself (it failed outright on its first), and cycle 2 succeeded on its first. No
+infrastructure-invalidated runs occurred at any point (cycle 1's failure is a client-control failure,
+not an AIP/server/network/fixture prerequisite failure, so §6.5's separate infrastructure-retry-budget
+accounting does not apply to it).
 
 ## Required successful protocol workflow (spec §6.8)
 
@@ -69,7 +79,7 @@ each other.
 
 | # | Requirement | Evidence |
 |---|---|---|
-| 1 | Initialization/negotiation | Passive capture: `POST /mcp` with body `{"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"codex-mcp-client","title":"Codex","version":"0.154.0"}}}` → `200`, followed by `notifications/initialized` → `202`. Repeated identically in a second, independent client process (see Reconnect below). |
+| 1 | Initialization/negotiation | Passive capture: `POST /mcp` with body `{"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"codex-mcp-client","title":"Codex","version":"0.154.0"}}}` → `200`, followed by `notifications/initialized` → `202`. Repeated identically in two further, independent client processes (see Reconnect below). |
 | 2 | Tool discovery | Passive capture: `POST /mcp` `{"method":"tools/list", ...}` → `200`, full tool schemas returned. |
 | 3 | Exactly three AIP tools discovered | The `tools/list` response body names exactly `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — no others. |
 | 4 | `get_architecture_drift` | `codex exec` JSON stream: `mcp_tool_call` item, `server: aip`, `tool: get_architecture_drift`, `status: completed`, request `{"service_id":"service:order-service","observation_context":{"environment":"demo","window_start":"2026-08-26T00:00:00Z","window_end":"2026-08-27T00:00:00Z"}}`. |
@@ -77,8 +87,8 @@ each other.
 | 6 | `get_evidence` using returned `evidence_refs` | Two `mcp_tool_call` items, `tool: get_evidence`, each using an `evidence_refs` value taken verbatim from the drift response (`evidence:otel:demo:2026-08-26:bfae54276215`, `evidence:asyncapi:order-service`). Both `outcome: ANSWERED`, `missing_evidence_refs: []`. |
 | 7 | Same snapshot used | All three tool calls carry `snapshot.snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
 | 8 | Disconnect/stop | `codex exec` is one-shot: the process exits after its turn completes, closing its MCP connection. |
-| 9 | Reconnect/reinitialize | A second, independent `codex exec` process (fresh prompt, fresh `thread_id`) performed its own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch (identical shape to attempt 1's, confirmed in the same passive capture, ~41s after the first sequence). |
-| 10 | One read-only tool works after reconnect | That second process's `get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`) and `producer.build_revision = 6461db6d51ee29e9c973e62b005aa84d5d95c077` — again the exact candidate SHA. |
+| 9 | Reconnect/reinitialize | Two further, independent `codex exec` processes (fresh prompts, fresh `thread_id`s each) each performed their own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch (identical shape to cycle 2's, confirmed in the same passive capture): the first (`get_service_dependencies`, malformed `service_id` on its first call, corrected on a second call within the same process — 2 tool calls, both `status: completed`) at ~9.5-13.4s into the capture, the second (single well-formed `get_service_dependencies` call) at ~41.8-53.4s into the capture. |
+| 10 | One read-only tool works after reconnect | The second reconnect process's `get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`) and `producer.build_revision = 6461db6d51ee29e9c973e62b005aa84d5d95c077` — again the exact candidate SHA. (The first reconnect process's corrected call also succeeded, returning `NOT_ANSWERED`/`OBSERVATION_CONTEXT_REQUIRED` for a call that omitted the required observation context — a valid, well-formed AIP business response, not a transport failure; not used as the primary reconnect citation only because it demonstrates a prompt-authoring gap on the operator's side rather than a clean positive result.) |
 
 ## Sanitization statement (spec §6.15)
 
@@ -97,12 +107,25 @@ identifiers, or unrelated content of any kind.
 
 | Field | Value |
 |---|---|
-| `revision_after` | `9` — equal to `revision_before` (`R = 9`). Zero writes across the entire tuple (initialize/discovery, both `codex exec` processes, all five tool calls). |
-| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged (`aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`), matching the pre-client snapshot `S`. |
+| `revision_after` | `9` — equal to `revision_before` (`R = 9`). This check was taken immediately after the three processes covered by the protocol-qualification/reconnect evidence above (cycle 2's successful process — 3 tool calls; the two reconnect processes — 2 + 1 tool calls; 6 tool calls total across 3 processes) and **before** the separate Appendix A.2 UX run below. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged (`aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`), matching the pre-client snapshot `S`. Same timing as `revision_after`: taken before the UX run. |
+
+This tuple's own fence/fixture recheck therefore covers cycle 1's failed attempt (no calls reached
+AIP) and cycle 2's full protocol-qualification + reconnect evidence, but **not** the separate Appendix
+A.2 UX run below, which was executed afterward in its own fresh process (2 more tool calls: one
+`get_architecture_drift`, one `get_evidence` resolving all three references in a single call) and was
+not independently re-fenced. This tuple's zero-write finding is therefore stated precisely as covering
+the protocol-qualification/reconnect portion, not the whole trace file end-to-end. The release-level
+zero-write claim as a whole is not weakened by this: per spec §6.12, it is "supported jointly by
+actual-client revision fence unchanged AND automated direct/negotiated zero-write tests" — the UX
+run's two calls used only `get_architecture_drift` and `get_evidence`, both already proven zero-write
+for every direct/negotiated routing path by `tests/integration/test_mcp_i1_zero_write_completion_gate.py`
+independent of which client issues the call.
 
 ## Mandatory separate UX observation (spec §7.2, Appendix A.2)
 
-Run in a fresh `codex exec` process/context, separate from the protocol-qualification runs above.
+Run in a fresh `codex exec` process/context, separate from the protocol-qualification runs above, and
+after this tuple's own post-client revision-fence/fixture recheck (see note above).
 
 **Prompt used:** the fixed Appendix A.2 prompt, verbatim.
 
@@ -228,8 +251,13 @@ quality — is what §7.2 requires.
 ## Disposition
 
 - `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 6461db6d51ee29e9c973e62b005aa84d5d95c077`.
-- Zero-write, same-snapshot, reconnect, and exact-tool-count requirements all independently confirmed
-  via passive capture, not inferred from the `codex exec` transcript alone.
+- Same-snapshot, reconnect, and exact-tool-count requirements independently confirmed via passive
+  capture, not inferred from the `codex exec` transcript alone. Zero-write is confirmed for cycle 1's
+  failed attempt and cycle 2's full protocol-qualification/reconnect evidence by direct revision-fence
+  measurement, and for the separate Appendix A.2 UX run's two calls by the automated zero-write test
+  suite (both use only already-proven-zero-write tools) — see the Post-client state note above.
+- Cycle 1's `CLIENT_CONTROL_FAILURE` and cycle 2's success are both recorded in the attempt table; the
+  earlier failure is not aggregated away by only reporting cycle 2.
 - Configuration re-verification confirms `examples/mcp-clients/codex.md`'s `--url` claim is accurate
   against current official documentation; see the narrower distinction recorded above (OAuth-flagged
   example vs. the simpler unauthenticated form used here).
