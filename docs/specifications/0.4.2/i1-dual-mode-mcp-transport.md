@@ -352,7 +352,9 @@ The negotiated follow-up header requirement is evaluated **only after the body h
 |---|---|
 | `POST` + any direct-envelope marker | Route to existing strict direct validation. |
 | Direct marker + missing/malformed direct `_meta` | Direct error; no fallback. |
-| Direct marker + header/body method mismatch | Direct error; no fallback. |
+| Direct marker + header/body method mismatch | Direct error; no fallback. Takes priority over the §10.1 allowlist check below - envelope/header validation (`classify_inbound_request`) always runs first. |
+| Direct marker + envelope valid + method in the §10.1 allowlist (`tools/list`, `tools/call`) | Forward to the mounted SDK app. |
+| Direct marker + envelope valid + method NOT in the §10.1 allowlist | `METHOD_NOT_FOUND` **before** the mounted SDK app is ever invoked - never forwarded on the assumption that a direct marker implies a safe-to-dispatch method (§10.1's correction). |
 | Direct marker + unknown tool | Direct error; no fallback. |
 | Direct marker + unexpected direct tool arguments | Direct error according to existing contract. |
 | Direct marker + session identifier | Direct mode wins; session state MUST NOT relax validation. |
@@ -785,6 +787,16 @@ session ID alone                      -> REJECT unless accompanied by required n
 mcp-method present                    -> direct
 mcp-name present                      -> direct
 direct _meta present                  -> direct
+direct marker + tools/list            -> forward to mounted SDK app
+direct marker + tools/call            -> forward to mounted SDK app
+direct marker + method not in the §10.1 allowlist (e.g. a real SDK-native
+  method unrelated to AIP's direct envelope)
+                                       -> METHOD_NOT_FOUND, never forwarded
+direct marker + header/body mismatch
+  AND method not in the §10.1 allowlist
+                                       -> header/body mismatch error wins
+                                          (envelope validation precedes the
+                                          allowlist check)
 ```
 
 This is a release requirement, not optional coverage.
