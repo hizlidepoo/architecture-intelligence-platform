@@ -77,10 +77,14 @@ license authorizing clients to omit the header. The pinned SDK already implement
 fallback (`DEFAULT_NEGOTIATED_VERSION` in `mcp.server.streamable_http`). Before this amendment, AIP's
 guard enforced only the client-side MUST, as a hard rejection, with no allowance at all for the
 server-side SHOULD: it hard-rejected every markerless follow-up missing the header, which is precisely
-how GitHub Copilot Chat's real MCP client in VS Code was found to behave (it omits the header on
-`notifications/initialized` and subsequent follow-ups even after correctly negotiating a current
-protocol version) - the strict check made VS Code unable to connect to AIP at all, not merely on some
-inputs, regardless of whose spec obligation was technically at issue.
+how GitHub Copilot Chat's real MCP client in VS Code was directly observed to behave on
+`notifications/initialized` even after correctly negotiating a current protocol version (the client's
+own trace log shows no `MCP-Protocol-Version` header on that request; its queued `prompts/list`/
+`tools/list` calls never completed once the connection died there, so their headers were never
+observed - the fix's coverage of all markerless follow-ups is a general contract requirement, not a
+claim that those two calls were confirmed headerless too) - the strict check made VS Code unable to
+connect to AIP at all, not merely on some inputs, regardless of whose spec obligation was technically
+at issue.
 
 Every non-POST method (`GET`, `DELETE`, `HEAD`, and everything else) is rejected with HTTP 405
 before the SDK is invoked at all, since this stateless release advertises no SSE stream or session
@@ -302,10 +306,11 @@ class ModernProtocolGuard:
         # header. The pinned SDK already implements that server-side fallback
         # (`DEFAULT_NEGOTIATED_VERSION`, `mcp.server.streamable_http`). Real-client finding (I3.4
         # VS Code + GitHub Copilot Chat qualification, `mcp==2.2.0`-negotiated
-        # `protocolVersion: "2025-11-25"`): VS Code's own MCP client sends
-        # `notifications/initialized` and subsequent follow-ups with no MCP-Protocol-Version header
-        # at all - rejecting that killed every VS Code connection outright, regardless of whether
-        # VS Code's own omission was itself spec-conformant. The pinned SDK owns everything else
+        # `protocolVersion: "2025-11-25"`): VS Code's own MCP client was directly observed sending
+        # `notifications/initialized` with no MCP-Protocol-Version header at all - rejecting that
+        # killed the connection outright before its queued `prompts/list`/`tools/list` could
+        # complete (their own headers were never observed as a result), regardless of whether VS
+        # Code's own omission was itself spec-conformant. The pinned SDK owns everything else
         # from here: negotiation, session lifecycle, and dispatch, including its own graceful
         # missing-header default and rejecting a version it does not recognize.
         if parsed.get("method") == "initialize":

@@ -10,8 +10,12 @@ distinct normative statements are both true at once, per the MCP specification's
 Header section (`basic/transports#protocol-version-header`):
 
 - The client **MUST** include `MCP-Protocol-Version` on every subsequent HTTP request. GitHub Copilot
-  Chat's built-in MCP client in VS Code does not do this on `notifications/initialized` (and
-  presumably later follow-ups) — that omission is itself **not** spec-conformant client behavior.
+  Chat's built-in MCP client in VS Code was directly observed omitting this header on
+  `notifications/initialized` — that omission is itself **not** spec-conformant client behavior. (Its
+  queued `prompts/list`/`tools/list` calls never completed once the connection died on that
+  notification, so whether they too would have omitted the header was never observed — the fix covers
+  every markerless follow-up as a general contract requirement, not a claim that those two calls were
+  confirmed headerless as well.)
 - Separately, for backward compatibility, a server that receives no such header and has no other way
   to identify the version **SHOULD assume** protocol version `2025-03-26` rather than reject the
   request outright.
@@ -109,12 +113,15 @@ the official MCP specification text — not accepted at face value:
    as the message AIP rejected.
 3. **Why AIP rejected it.** `app/mcp/guard.py`'s negotiated-mode branch required every non-`initialize`
    markerless request to carry an `MCP-Protocol-Version` header, with no exception for a missing
-   header. GitHub Copilot Chat's MCP client does not include this header on `notifications/initialized`
-   (nor, presumably, on the queued `prompts/list`/`tools/list`, though the connection never survived
-   long enough to observe those).
+   header. GitHub Copilot Chat's MCP client is directly confirmed, via its own trace log, not to
+   include this header on `notifications/initialized`. Its queued `prompts/list`/`tools/list` calls
+   never completed once the connection died on that notification, so whether those two calls would
+   also have omitted the header was never observed one way or the other — this finding and the fix
+   that follows do not depend on that being true, only on the one directly observed case.
 4. **This is not "VS Code is an old/legacy client."** VS Code correctly negotiated a *current* protocol
-   version, `2025-11-25` — not an old pre-header-requirement era. It omits the header on follow-ups
-   regardless, which is not itself spec-conformant client behavior (see next point) — but the spec
+   version, `2025-11-25` — not an old pre-header-requirement era. It omitted the header on the one
+   follow-up observed regardless, which is not itself spec-conformant client behavior (see next point)
+   — but the spec
    directs servers to tolerate exactly this gracefully rather than reject it.
 5. **Independently verified against the MCP specification's own text**
    (`modelcontextprotocol.io/specification/2025-11-25/basic/transports`, "Protocol Version Header"):
@@ -190,11 +197,15 @@ before/after pair for this one attempt.
 - This candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) is **INVALIDATED**.
 - VS Code's tuple requires a fresh qualification attempt against the new, post-fix
   `RELEASE_CANDIDATE_SHA`, per spec §4.4 and §6.5.
-- None of Codex CLI's, Claude Code's, or Cursor's traffic against this same invalidated candidate
-  exercised this specific missing-header code path (Codex CLI and Claude Code's own passive captures
-  confirm they always sent the header; Cursor's equivalent traffic was not observed to omit it
-  either), so this defect does not itself cast doubt on those tuples' observed protocol behavior.
-  That said, their required disposition against the new candidate differs by tuple, not a single
+- None of Codex CLI's, Claude Code's, or Cursor's traffic against this same invalidated candidate is
+  known to have exercised this specific missing-header code path. Codex CLI and Claude Code's own
+  passive captures directly confirm they always sent the header on every negotiated request. Cursor's
+  trace has no network capture at all (client UI evidence only), so nothing about its header behavior
+  was directly observed either way — the only available evidence is that Cursor's calls completed
+  successfully, which is consistent with (but does not prove) it having sent the header; this is
+  recorded as an inference, not an observation. Either way, this defect does not itself cast doubt on
+  those tuples' observed protocol behavior. That said, their required disposition against the new
+  candidate differs by tuple, not a single
   blanket "reconfirm all three": **Codex CLI is `QUALIFIED`** against the invalidated candidate and
   needs reconfirmation against the new one, per spec §4.4; **Claude Code is `QUALIFIED`** against the
   invalidated candidate and likewise needs reconfirmation; **Cursor is `UNVERIFIED`**, not

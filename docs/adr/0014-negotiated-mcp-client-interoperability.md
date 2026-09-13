@@ -258,12 +258,17 @@ otherwise-unrecognized version value is still handled entirely by the SDK's own 
 semantics, unchanged.
 
 Regression coverage added to `tests/unit/test_mcp_discovery.py`: one dedicated scenario test,
-`_check_vscode_full_sequence_without_protocol_header_is_accepted`, performs the exact real-world
-`initialize` → `notifications/initialized` → `tools/list` sequence VS Code sends (all three requests
-itself, not relying on adjacent-test call order), asserting the negotiated `2025-11-25` `initialize`
-result, the notification's exact `202 Accepted`/empty-body response (not merely "not a 400"), and a
-successful three-tool `tools/list` immediately after — all with no `MCP-Protocol-Version` header
-present anywhere in the sequence; the general markerless
+`_check_vscode_full_sequence_without_protocol_header_is_accepted`, performs `initialize` →
+`notifications/initialized` → `tools/list`, all three requests itself (not relying on adjacent-test
+call order) and all headerless — asserting the negotiated `2025-11-25` `initialize` result, the
+notification's exact `202 Accepted`/empty-body response (not merely "not a 400"), and a successful
+three-tool `tools/list` immediately after. Only the `initialize` → headerless-`notifications/initialized`
+portion of this sequence was directly observed in VS Code's own client trace log (that is the exact
+real-world reproduction); its queued `prompts/list`/`tools/list` never completed once the connection
+died, so their headers were never observed. Covering headerless `tools/list`/`tools/call` in the same
+scenario and elsewhere in this file is deliberate, broader contract coverage for the general fallback
+rule §11 now states — not a claim that VS Code's own `tools/list` was confirmed headerless too. The
+general markerless
 `tools/list`/`tools/call`-without-header checks were updated from asserting rejection to asserting the
 SDK fallback now answers them normally; a session identifier alone (still no version header) is
 likewise now delegated to the SDK, not rejected; the direct-era-header-present-without-marker

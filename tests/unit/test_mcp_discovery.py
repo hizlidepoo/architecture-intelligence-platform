@@ -612,14 +612,17 @@ async def _check_negotiated_tools_call_shares_the_direct_tool_implementation(
 async def _check_vscode_full_sequence_without_protocol_header_is_accepted(
     client: httpx.AsyncClient,
 ) -> None:
-    """The exact real-world reproduction, as one dedicated scenario (v0.4.2 I1 amendment, I3.4 VS
-    Code actual-client-qualification finding), not spread across the aggregate test's other
-    unrelated requests: GitHub Copilot Chat's MCP client, in VS Code 1.137.0, negotiates
-    `protocolVersion: "2025-11-25"` via `initialize`, sends `notifications/initialized` with no
-    `MCP-Protocol-Version` header at all, then `tools/list`, also with no header. Before this fix,
-    the notification was a hard 400 (`"A negotiated follow-up request requires an
-    MCP-Protocol-Version header"`), which killed the connection outright before `tools/list` ever
-    ran - VS Code could not connect to AIP at all. `notifications/initialized` is a JSON-RPC
+    """One dedicated scenario (v0.4.2 I1 amendment, I3.4 VS Code actual-client-qualification
+    finding), not spread across the aggregate test's other unrelated requests. Only the first two
+    steps are the directly-observed real-world reproduction: GitHub Copilot Chat's MCP client, in
+    VS Code 1.137.0, negotiated `protocolVersion: "2025-11-25"` via `initialize`, then sent
+    `notifications/initialized` with no `MCP-Protocol-Version` header at all (confirmed in the
+    client's own trace log). Before this fix, that notification was a hard 400 (`"A negotiated
+    follow-up request requires an MCP-Protocol-Version header"`), which killed the connection
+    outright before its queued `prompts/list`/`tools/list` calls could complete - so their own
+    headers were never observed, and this test's headerless `tools/list` step is deliberate,
+    broader contract coverage for the general fallback rule, not a claim that VS Code's own
+    `tools/list` was confirmed headerless too. `notifications/initialized` is a JSON-RPC
     *notification* (no `id` field), which is exactly why the real error response VS Code received
     carried `"id": null`; per the transport spec, an accepted notification returns exactly
     `202 Accepted` with an empty body - not "200 or something", asserted precisely here."""

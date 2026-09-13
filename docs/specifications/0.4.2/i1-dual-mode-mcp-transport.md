@@ -342,9 +342,12 @@ behavior (`DEFAULT_NEGOTIATED_VERSION` fallback in `mcp.server.streamable_http`,
 states its "legacy version-gate is gone") and than the MCP specification's own server-side
 backward-compatibility allowance for exactly this case (see next paragraph for the precise two-sided
 statement). VS Code negotiated a current protocol version (`2025-11-25`) correctly via `initialize`,
-then sent `notifications/initialized` and subsequent follow-ups with no `MCP-Protocol-Version` header
-at all — the strict rejection killed the connection immediately, before `tools/list` ever ran, making
-VS Code unable to connect to AIP under any invocation. The old "Only `initialize` MAY be markerless"
+then sent `notifications/initialized` with no `MCP-Protocol-Version` header at all (directly observed
+in the client's own trace log) — the strict rejection killed the connection immediately, before its
+queued `prompts/list`/`tools/list` calls could complete, making VS Code unable to connect to AIP under
+any invocation. (Those two queued calls' own headers were never observed, since the connection died
+first; the corrected rule below covers every markerless follow-up as a general contract requirement,
+not because all of VS Code's follow-ups were confirmed headerless.) The old "Only `initialize` MAY be markerless"
 statement is retired (it now contradicts §11.1's own routing table, which delegates certain other
 markerless requests too) and replaced by the "negotiated candidate" framing above; the rule below is
 corrected accordingly.
