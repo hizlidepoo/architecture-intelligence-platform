@@ -64,6 +64,20 @@ to every other client, including its own health check. This is a closed allowlis
 per-method denylist: any future SDK-native method this guard has not been taught about is rejected the
 same way, never blindly trusted.
 
+A markerless negotiated follow-up with **no** `MCP-Protocol-Version` header at all is forwarded to the
+pinned SDK, not rejected (v0.4.2 I1 amendment, I3.4 VS Code actual-client-qualification finding). Only
+a markerless follow-up that *explicitly* names the direct/single-exchange `2026-07-28` era is still
+rejected outright - that specific contradiction (claims the direct era, behaves like negotiated
+traffic) is never delegated. A missing header is a different, spec-anticipated case: the MCP
+specification's own backward-compatibility clause says a server that does not receive this header
+"SHOULD assume protocol version 2025-03-26" rather than reject, and the pinned SDK already implements
+exactly that fallback (`DEFAULT_NEGOTIATED_VERSION` in `mcp.server.streamable_http`). Before this
+amendment, AIP's guard was stricter than both the spec and its own pinned SDK: it hard-rejected every
+markerless follow-up missing the header, which is precisely how GitHub Copilot Chat's real MCP client
+in VS Code was found to behave (it omits the header on `notifications/initialized` and subsequent
+follow-ups even after correctly negotiating a current protocol version) - the strict check made VS
+Code unable to connect to AIP at all, not merely on some inputs.
+
 Every non-POST method (`GET`, `DELETE`, `HEAD`, and everything else) is rejected with HTTP 405
 before the SDK is invoked at all, since this stateless release advertises no SSE stream or session
 lifecycle on any of them - see spec §8/§30 for the exact per-method contract.
@@ -271,28 +285,28 @@ class ModernProtocolGuard:
             await self._app(scope, replay_receive, send)
             return
 
-        # No AIP direct-envelope marker at all: this is negotiated-mode traffic. Only
-        # `initialize` may be markerless - every other method needs a MCP-Protocol-Version
-        # header that does not itself name the direct/single-exchange era. The pinned SDK
-        # owns everything else from here: negotiation, session lifecycle, and dispatch,
-        # including rejecting a version it does not recognize.
+        # No AIP direct-envelope marker at all: this is negotiated-mode traffic. Only a
+        # markerless follow-up that explicitly names the direct/single-exchange era is rejected
+        # here - that specific contradiction (claims the direct era, behaves like negotiated
+        # traffic) is never delegated. A *missing* MCP-Protocol-Version header is not that
+        # contradiction: per the MCP spec's own backward-compatibility clause ("if the server
+        # does not receive an MCP-Protocol-Version header... the server SHOULD assume protocol
+        # version 2025-03-26" - basic/transports#protocol-version-header) and the pinned SDK's
+        # own already-implemented fallback (`DEFAULT_NEGOTIATED_VERSION`, `mcp.server.
+        # streamable_http`), a missing header on a follow-up is legitimate, spec-anticipated
+        # traffic, not a violation to reject. Real-client finding (I3.4 VS Code + GitHub Copilot
+        # Chat qualification, `mcp==2.2.0`-negotiated `protocolVersion: "2025-11-25"`): VS Code's
+        # own MCP client sends `notifications/initialized` and subsequent follow-ups with no
+        # MCP-Protocol-Version header at all - rejecting that killed every VS Code connection
+        # outright. The pinned SDK owns everything else from here: negotiation, session
+        # lifecycle, and dispatch, including its own graceful missing-header default and
+        # rejecting a version it does not recognize.
         if parsed.get("method") == "initialize":
             await self._app(scope, replay_receive, send)
             return
 
         version_header = headers.get(MCP_PROTOCOL_VERSION_HEADER)
-        if version_header is None:
-            await _send_json_error(
-                send,
-                _DEFAULT_HTTP_STATUS,
-                _error_body(
-                    request_id,
-                    INVALID_REQUEST,
-                    "A negotiated follow-up request requires an MCP-Protocol-Version header",
-                ),
-            )
-            return
-        if version_header in MODERN_PROTOCOL_VERSIONS:
+        if version_header is not None and version_header in MODERN_PROTOCOL_VERSIONS:
             await _send_json_error(
                 send,
                 _DEFAULT_HTTP_STATUS,

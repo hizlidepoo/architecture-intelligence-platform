@@ -331,20 +331,35 @@ Reason:
 
 Only `initialize` MAY be markerless.
 
+**Correction (I3.4 VS Code actual-client qualification finding — see ADR 0014's "Amendment" section
+for the full narrative):** this section originally required `MCP-Protocol-Version` to be *present* on
+every non-`initialize` markerless request, rejecting a missing header before SDK tool dispatch. Live
+qualification against GitHub Copilot Chat's MCP client in VS Code 1.137.0 found this stricter than
+both the MCP specification itself (which says a server receiving no such header "SHOULD assume
+protocol version 2025-03-26" rather than reject — spec, Protocol Version Header) and the pinned SDK's
+own already-implemented behavior (`DEFAULT_NEGOTIATED_VERSION` fallback in
+`mcp.server.streamable_http`, whose own comment states its "legacy version-gate is gone"). VS Code
+negotiated a current protocol version (`2025-11-25`) correctly via `initialize`, then sent
+`notifications/initialized` and subsequent follow-ups with no `MCP-Protocol-Version` header at all —
+the strict rejection killed the connection immediately, before `tools/list` ever ran, making VS Code
+unable to connect to AIP under any invocation. The rule below is corrected accordingly.
+
 For any non-`initialize` request with no AIP direct-envelope marker:
 
-1. `MCP-Protocol-Version` MUST be present; and
-2. the pinned SDK MUST recognize its value as a supported **handshake-era negotiated protocol version**.
+1. if `MCP-Protocol-Version` is present, it MUST NOT name the direct/single-exchange era (rejected
+   below if it does), and the pinned SDK MUST recognize any other value as a supported
+   **handshake-era negotiated protocol version** or reject it per its own recognition rules;
+2. if `MCP-Protocol-Version` is **absent**, the request is delegated to the pinned SDK, which applies
+   its own graceful missing-header default — this is spec-anticipated, backward-compatible traffic,
+   not a violation.
 
-AIP MUST use the pinned SDK's own classifier/constants for this recognition rather than maintain an independent protocol-era list.
+AIP MUST use the pinned SDK's own classifier/constants for handshake-era recognition rather than maintain an independent protocol-era list.
 
-A markerless non-`initialize` request with no protocol header MUST be rejected before SDK tool dispatch.
+A request carrying direct-era `2026-07-28` as `MCP-Protocol-Version` but no direct-envelope markers MUST still be rejected rather than accepted as negotiated follow-up traffic — that is a genuine contradiction (a request explicitly claiming the direct/single-exchange era while behaving like ordinary negotiated traffic), unlike a header that is simply absent.
 
-A request carrying direct-era `2026-07-28` as `MCP-Protocol-Version` but no direct-envelope markers MUST also be rejected rather than accepted as negotiated follow-up traffic.
+This prevents a request that explicitly (mis)claims the direct era from bypassing the existing direct validation contract, while still allowing genuine markerless negotiated traffic — including traffic that omits the version header entirely, as real clients do — to reach the pinned SDK.
 
-This prevents bare stateless `tools/list` / `tools/call` requests from bypassing the existing direct validation contract.
-
-The negotiated follow-up header requirement is evaluated **only after the body has been parsed into a valid JSON-RPC request and a method has been extracted**. If the body is malformed/non-object and no direct-specific header establishes direct ownership, the pinned SDK parse handler owns the failure. The expected oracle is the SDK's JSON-RPC parse error, not AIP's missing-header 400.
+The negotiated follow-up rule is evaluated **only after the body has been parsed into a valid JSON-RPC request and a method has been extracted**. If the body is malformed/non-object and no direct-specific header establishes direct ownership, the pinned SDK parse handler owns the failure. The expected oracle is the SDK's JSON-RPC parse error, not a guard-synthesized error.
 
 ### 11.1 Routing table
 
@@ -361,10 +376,10 @@ The negotiated follow-up header requirement is evaluated **only after the body h
 | Markerless `initialize` without protocol header | Delegate to pinned SDK initialization. |
 | Markerless `initialize` with protocol header | Delegate to pinned SDK initialization/version handling. |
 | Non-`initialize`, no direct marker, recognized handshake-era `MCP-Protocol-Version` | Delegate to pinned SDK negotiated handling. |
-| Non-`initialize`, no direct marker, missing `MCP-Protocol-Version` | Reject before SDK tool dispatch. |
-| Non-`initialize`, no direct marker, direct-era `2026-07-28` header | Reject; MUST NOT become negotiated traffic. |
-| Non-`initialize`, unsupported/invalid protocol version | Use pinned SDK recognition/error semantics; MUST NOT reach tool dispatch. |
-| Session identifier only, no direct marker, no recognized handshake-era version | Reject. |
+| Non-`initialize`, no direct marker, missing `MCP-Protocol-Version` (I3.4 correction) | Delegate to pinned SDK negotiated handling — the SDK's own missing-header default applies, per the MCP spec's backward-compatibility clause. Not a rejection. |
+| Non-`initialize`, no direct marker, direct-era `2026-07-28` header | Reject; MUST NOT become negotiated traffic — this is the one case a *present* header value still blocks, since it is a genuine contradiction, not an absence. |
+| Non-`initialize`, unsupported/invalid protocol version (present but not recognized) | Use pinned SDK recognition/error semantics; MUST NOT reach tool dispatch. |
+| Session identifier only, no direct marker, no `MCP-Protocol-Version` header at all (I3.4 correction) | Delegate to pinned SDK negotiated handling, same as any other missing-header markerless request — a session identifier alone does not change this. |
 | Malformed/non-object JSON + direct-specific header (`mcp-method` or `mcp-name`) | Direct ownership remains sticky; no negotiated fallback. |
 | Malformed/non-object JSON without a direct-specific header | Delegate immediately to the pinned SDK parse handler. Do not apply the negotiated-header check because no valid method has been extracted yet. |
 | `GET /mcp` | AIP ingress returns HTTP 405 + `Allow: POST`; SDK not invoked. |
@@ -394,7 +409,7 @@ direct envelope + unknown tool
 
 No such request may be retried internally through the SDK's negotiated path.
 
-In addition, a markerless non-`initialize` request MUST NOT reach negotiated tool dispatch unless it carries a pinned-SDK-recognized handshake-era `MCP-Protocol-Version`.
+In addition, a markerless non-`initialize` request MUST NOT reach negotiated tool dispatch if its `MCP-Protocol-Version` header is *present* but names the direct/single-exchange era (§11's genuine contradiction). A markerless non-`initialize` request whose header is absent entirely, or names a recognized handshake-era version, MAY reach negotiated tool dispatch — a missing header is not, by itself, grounds to withhold dispatch (I3.4 correction; §11).
 
 ---
 
@@ -776,14 +791,16 @@ Special assertions:
 ```text
 MCP-Protocol-Version alone            -> NOT direct
 markerless initialize                 -> negotiated SDK
-markerless tools/list                 -> REJECT
-markerless tools/call                 -> REJECT
+markerless tools/list, no header      -> negotiated SDK (I3.4 correction - was REJECT)
+markerless tools/call, no header      -> negotiated SDK (I3.4 correction - was REJECT)
 malformed body + direct header        -> direct-owned error
 malformed body + no direct header     -> SDK parse error
 handshake-era version + tools/list    -> negotiated SDK
 handshake-era version + tools/call    -> negotiated SDK
 2026-07-28 only + non-initialize      -> REJECT
-session ID alone                      -> REJECT unless accompanied by required negotiated-era version/lifecycle
+session ID alone, no protocol header  -> negotiated SDK, same as any other
+                                          missing-header markerless request
+                                          (I3.4 correction - was REJECT)
 mcp-method present                    -> direct
 mcp-name present                      -> direct
 direct _meta present                  -> direct
@@ -998,8 +1015,12 @@ I1 is complete only when all of the following are true:
 - [ ] Every routing truth-table row has executable coverage.
 - [ ] `MCP-Protocol-Version` alone does not select direct mode.
 - [ ] Only `initialize` may be markerless.
-- [ ] Markerless non-`initialize` `tools/list` and `tools/call` are rejected before SDK tool dispatch.
+- [ ] Markerless non-`initialize` `tools/list` and `tools/call` reach the pinned SDK regardless of
+      whether `MCP-Protocol-Version` is present or absent (I3.4 correction), UNLESS the header is
+      present and names the direct/single-exchange era, which is still rejected.
 - [ ] Recognized handshake-era protocol headers permit negotiated follow-up dispatch.
+- [ ] A missing `MCP-Protocol-Version` header on a markerless non-`initialize` request also permits
+      negotiated follow-up dispatch, via the pinned SDK's own missing-header default (I3.4 correction).
 - [ ] Direct-era `2026-07-28` without direct-envelope markers is rejected as negotiated follow-up traffic.
 - [ ] Malformed direct traffic never falls through to negotiated handling.
 - [ ] Direct validation/error-priority regression count is zero.
@@ -1027,7 +1048,6 @@ existing valid direct request changes behavior unexpectedly
 existing direct error priority changes unexpectedly
 direct request can downgrade/fall through into negotiated mode
 MCP-Protocol-Version alone selects direct mode
-markerless non-initialize tools/list or tools/call reaches SDK tool dispatch
 direct-era 2026-07-28 without direct markers is accepted as negotiated follow-up
 any non-POST method does not return the defined 405 contract
 any non-POST method reaches SDK stream/session allocation

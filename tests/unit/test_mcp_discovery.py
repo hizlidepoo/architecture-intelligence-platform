@@ -496,28 +496,34 @@ async def _check_protocol_version_header_alone_does_not_select_direct_mode(
     assert names == ["get_architecture_drift", "get_evidence", "get_service_dependencies"]
 
 
-async def _check_markerless_tools_list_without_header_is_rejected(
+async def _check_markerless_tools_list_without_header_falls_back_to_sdk(
     client: httpx.AsyncClient,
 ) -> None:
-    """A markerless non-`initialize` request with no `MCP-Protocol-Version` header at all must be
-    rejected before SDK tool dispatch, not silently answered."""
+    """A markerless non-`initialize` request with no `MCP-Protocol-Version` header at all is
+    forwarded to the pinned SDK, not rejected (v0.4.2 I1 amendment, I3.4 VS Code finding) - the
+    SDK's own `DEFAULT_NEGOTIATED_VERSION` fallback answers it normally, matching the MCP spec's
+    backward-compatibility clause for a missing header."""
     response = await client.post(
         "/mcp", headers=_negotiated_headers(), json=_negotiated_tools_list_body()
     )
-    assert response.status_code == 400
-    error = response.json()["error"]
-    assert error["code"] == -32600
-    assert "result" not in response.json()
+    assert response.status_code == 200
+    names = [tool["name"] for tool in response.json()["result"]["tools"]]
+    assert names == ["get_architecture_drift", "get_evidence", "get_service_dependencies"]
 
 
-async def _check_markerless_tools_call_without_header_is_rejected(
+async def _check_markerless_tools_call_without_header_falls_back_to_sdk(
     client: httpx.AsyncClient,
 ) -> None:
-    body = _negotiated_tools_call_body("get_evidence", {})
+    """Same fallback as tools/list above, for tools/call - dispatches to the real tool
+    implementation rather than being rejected for the missing header."""
+    body = _negotiated_tools_call_body(
+        "get_architecture_drift", {"request": {"service_id": "service:order-service"}}
+    )
     response = await client.post("/mcp", headers=_negotiated_headers(), json=body)
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == -32600
-    assert "result" not in response.json()
+    assert response.status_code == 200
+    result = response.json()["result"]
+    assert result["isError"] is True
+    assert result["content"][0]["text"] == "Error executing tool get_architecture_drift"
 
 
 async def _check_direct_era_header_without_marker_is_rejected(
@@ -537,11 +543,12 @@ async def _check_session_id_header_alone_is_not_a_direct_marker(
 ) -> None:
     """An MCP session identifier by itself is also not a direct-mode discriminator - a markerless
     request carrying only a (fabricated, unrecognized) session id and no protocol-version header
-    fails the same way a bare markerless request does, not differently."""
+    is treated the same way a bare markerless request is (falls back to the SDK), not differently."""
     headers = dict(_negotiated_headers(), **{"mcp-session-id": "not-a-real-session"})
     response = await client.post("/mcp", headers=headers, json=_negotiated_tools_list_body())
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == -32600
+    assert response.status_code == 200
+    names = [tool["name"] for tool in response.json()["result"]["tools"]]
+    assert names == ["get_architecture_drift", "get_evidence", "get_service_dependencies"]
 
 
 async def _check_unrecognized_protocol_version_is_handled_by_sdk_without_dispatch(
@@ -600,6 +607,39 @@ async def _check_negotiated_tools_call_shares_the_direct_tool_implementation(
     result = response.json()["result"]
     assert result["isError"] is True
     assert result["content"][0]["text"] == "Error executing tool get_architecture_drift"
+
+
+async def _check_vscode_notifications_initialized_without_header_is_accepted(
+    client: httpx.AsyncClient,
+) -> None:
+    """The exact real-world reproduction (v0.4.2 I1 amendment, I3.4 VS Code actual-client-
+    qualification finding): GitHub Copilot Chat's MCP client, in VS Code 1.137.0, negotiates
+    `protocolVersion: "2025-11-25"` via `initialize` and then sends `notifications/initialized`
+    with no `MCP-Protocol-Version` header at all. Before this fix, that was a hard 400
+    (`"A negotiated follow-up request requires an MCP-Protocol-Version header"`), which killed the
+    connection outright before `tools/list` ever ran - VS Code could not connect to AIP at all.
+    `notifications/initialized` is a JSON-RPC *notification* (no `id` field), which is exactly why
+    the real error response VS Code received carried `"id": null`."""
+    notification = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+    response = await client.post("/mcp", headers=_negotiated_headers(), json=notification)
+    assert response.status_code in (200, 202)
+    if response.content:
+        assert "error" not in response.json()
+
+
+async def _check_vscode_tools_list_after_notification_without_header_is_accepted(
+    client: httpx.AsyncClient,
+) -> None:
+    """Continuing the exact VS Code sequence: `tools/list` immediately after
+    `notifications/initialized`, also with no `MCP-Protocol-Version` header, must succeed rather
+    than be rejected - proving the full real-world sequence works end to end, not just one
+    isolated request shape."""
+    response = await client.post(
+        "/mcp", headers=_negotiated_headers(), json=_negotiated_tools_list_body()
+    )
+    assert response.status_code == 200
+    names = [tool["name"] for tool in response.json()["result"]["tools"]]
+    assert names == ["get_architecture_drift", "get_evidence", "get_service_dependencies"]
 
 
 # --- Direct-marked but unimplemented methods (v0.4.2 I1, I3.3 actual-client finding) ---------------
@@ -788,14 +828,16 @@ async def test_mcp_protocol_and_discovery() -> None:
             await _check_markerless_initialize_reaches_negotiated_sdk_path(client)
             await _check_negotiated_mode_issues_no_session_id(client)
             await _check_protocol_version_header_alone_does_not_select_direct_mode(client)
-            await _check_markerless_tools_list_without_header_is_rejected(client)
-            await _check_markerless_tools_call_without_header_is_rejected(client)
+            await _check_markerless_tools_list_without_header_falls_back_to_sdk(client)
+            await _check_markerless_tools_call_without_header_falls_back_to_sdk(client)
             await _check_direct_era_header_without_marker_is_rejected(client)
             await _check_session_id_header_alone_is_not_a_direct_marker(client)
             await _check_unrecognized_protocol_version_is_handled_by_sdk_without_dispatch(client)
             await _check_malformed_json_without_direct_header_reaches_sdk_parse_handler(client)
             await _check_malformed_json_with_direct_header_is_owned_by_direct_path(client)
             await _check_negotiated_tools_call_shares_the_direct_tool_implementation(client)
+            await _check_vscode_notifications_initialized_without_header_is_accepted(client)
+            await _check_vscode_tools_list_after_notification_without_header_is_accepted(client)
             await _check_another_unimplemented_direct_marked_method_is_also_rejected(client)
             await _check_header_body_mismatch_takes_priority_over_unimplemented_method(client)
             await _check_server_stays_responsive_after_rejecting_an_unimplemented_direct_method(
