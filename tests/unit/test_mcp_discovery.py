@@ -602,7 +602,7 @@ async def _check_negotiated_tools_call_shares_the_direct_tool_implementation(
     assert result["content"][0]["text"] == "Error executing tool get_architecture_drift"
 
 
-# --- Direct-marked but unimplemented methods (v0.4.2 I1 post-release finding) ---------------------
+# --- Direct-marked but unimplemented methods (v0.4.2 I1, I3.3 actual-client finding) ---------------
 #
 # `mcp-method`/`mcp-name` are the pinned SDK's own header names (`mcp.shared.inbound`), not
 # AIP-proprietary - a real client can legitimately send them for its own SDK-native purposes.
@@ -613,28 +613,14 @@ async def _check_negotiated_tools_call_shares_the_direct_tool_implementation(
 # `subscriptions/listen` reached an SDK code path that hangs indefinitely under AIP's stateless
 # single-worker deployment, pegging the process at ~100% CPU and making it unresponsive to every
 # other client, including its own health check. See `app/mcp/guard.py`'s `_DIRECT_MODE_METHODS`.
-
-
-async def _check_unimplemented_direct_marked_method_is_rejected_not_forwarded(
-    client: httpx.AsyncClient,
-) -> None:
-    """The exact real-world repro: `subscriptions/listen` must be rejected fast and deterministically,
-    never forwarded. Bounded by `asyncio.wait_for` so a regression here fails this test instead of
-    hanging the whole suite."""
-    body = {
-        "jsonrpc": "2.0",
-        "id": "listen:0",
-        "method": "subscriptions/listen",
-        "params": {"_meta": _meta(), "notifications": {"toolsListChanged": True}},
-    }
-    response = await asyncio.wait_for(
-        client.post("/mcp", headers=_headers(method="subscriptions/listen"), json=body),
-        timeout=5,
-    )
-    assert response.status_code == 404
-    error = response.json()["error"]
-    assert error["code"] == -32601
-    assert error["data"] == "subscriptions/listen"
+#
+# The exact `subscriptions/listen` reproduction is deliberately NOT an in-process ASGI check here:
+# this module's own root-cause finding is that the offending SDK code never yields to the event
+# loop, so `asyncio.wait_for` cannot preempt it once it starts - confirmed by git-stash-verifying
+# that an in-process version of this exact check hangs the *entire* pytest process indefinitely
+# without the fix, not just this one test. `tests/integration/test_mcp_direct_marker_dos_regression.py`
+# covers that specific case instead, running the guard-wrapped app in a genuinely separate OS
+# process so a parent-side hard timeout can terminate the child and fail promptly if it regresses.
 
 
 async def _check_another_unimplemented_direct_marked_method_is_also_rejected(
@@ -810,7 +796,6 @@ async def test_mcp_protocol_and_discovery() -> None:
             await _check_malformed_json_without_direct_header_reaches_sdk_parse_handler(client)
             await _check_malformed_json_with_direct_header_is_owned_by_direct_path(client)
             await _check_negotiated_tools_call_shares_the_direct_tool_implementation(client)
-            await _check_unimplemented_direct_marked_method_is_rejected_not_forwarded(client)
             await _check_another_unimplemented_direct_marked_method_is_also_rejected(client)
             await _check_header_body_mismatch_takes_priority_over_unimplemented_method(client)
             await _check_server_stays_responsive_after_rejecting_an_unimplemented_direct_method(
