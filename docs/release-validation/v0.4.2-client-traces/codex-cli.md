@@ -42,7 +42,7 @@ the new, post-fix `RELEASE_CANDIDATE_SHA` rather than carried forward by asserti
 |---|---|
 | Official source | <https://learn.chatgpt.com/docs/extend/mcp?surface=cli> |
 | Verification date | 2026-09-13 (this run) |
-| Result | The `--url` flag genuinely exists and works in the installed `codex-cli 0.154.0` (`codex mcp add --help` documents it: `--url <URL>  URL for a streamable HTTP MCP server`, and it was used successfully below). **Finding**: the official docs page's own prose does not show a worked `codex mcp add --url ...` example — its only CLI example is for a stdio server (`codex mcp add context7 -- npx ...`); the page's HTTP-server section only shows the `url` field inside `config.toml`. `examples/mcp-clients/codex.md`'s current claim that "the official docs ... document a `--url` flag" is broader than what the docs page's prose actually shows; the flag is real and correctly documented in the CLI's own `--help`, which is what this qualification run relies on. Not release-blocking (the flag is genuine, not invented, and worked exactly as documented by `--help`), but worth a small follow-up correction to that guide's wording. |
+| Result | PASS — the official docs page does document a `--url` flag on `codex mcp add` (`codex mcp add example --url https://mcp.example.com --oauth-client-id my-client`, shown under the OAuth pre-registered-client-ID section), and the installed `codex-cli 0.154.0`'s own `--help` documents the same flag (`--url <URL>  URL for a streamable HTTP MCP server`) independent of OAuth. `examples/mcp-clients/codex.md`'s claim is accurate. A narrower distinction worth noting: the docs page's only worked `--url` example includes `--oauth-client-id`; it does not show the simpler unauthenticated form used here (`--url` alone, no OAuth flags) as its own example. This qualification run used and confirmed the unauthenticated form works exactly as `--help` describes — not release-blocking, and not a documentation defect (an initial verification pass using a web-summarization tool missed the OAuth-section example on the first two attempts; corrected here by inspecting the raw page source directly). |
 
 ## Pre-client state (spec §6.2/§6.3)
 
@@ -55,9 +55,10 @@ revision fence `R = 9`.
 
 | Attempt | Classification | Outcome |
 |---|---|---|
-| 1 | — | Full success on the first valid attempt: `codex exec` (Appendix A.1 fixed prompt) called `get_architecture_drift` then `get_evidence` twice (once per finding), using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
+| 0 | `CLIENT_CONTROL_FAILURE` | `codex exec --json -s read-only -C <scratch-dir> - < prompt.txt` (no `--skip-git-repo-check`) refused to start: `"Not inside a trusted directory and --skip-git-repo-check was not specified."` AIP/demo/network/fixture prerequisites were healthy at that moment (the server was up and serving, confirmed by the very next attempt succeeding against it unmodified); the official client itself could not issue the required call, matching §6.6's `CLIENT_CONTROL_FAILURE` definition exactly. Per §6.5 (Deterministic client control) / the general failure-taxonomy rule, this **fails the tuple** as of this attempt. |
+| 1 (fresh cycle, after correction) | — | Configuration corrected — the invocation was missing the required `--skip-git-repo-check` flag because the working directory used for `codex exec` was a plain scratch directory outside any git repository, not because of any AIP/server/fixture problem. Qualification was restarted as a fresh cycle with the corrected invocation: `codex exec --json --skip-git-repo-check -s read-only -C <scratch-dir> - < prompt.txt` (Appendix A.1 fixed prompt). Full success: called `get_architecture_drift` then `get_evidence` twice (once per finding), using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
 
-One valid client attempt used, within the LLM-mediated budget of 2 (spec §6.5). No infrastructure-invalidated runs occurred (one earlier local `codex exec` invocation failed with "Not inside a trusted directory and `--skip-git-repo-check` was not specified" *before* any request reached AIP or the client's MCP subsystem — a CLI invocation-argument mistake on the operator's side, not an AIP/network/fixture prerequisite failure, so it is not itself an "infrastructure-invalidated run" under §6.5's definition and does not consume any budget).
+Attempt 0 never reached AIP, the fixture, or the client's MCP subsystem at all (it failed at Codex's own local trust-gate before opening any network connection), so the pre-client state recorded above (§6.2/§6.3, taken once before either invocation) remains valid for attempt 1 unmodified — no re-baseline was needed. One valid client attempt (attempt 1) is consumed, within the LLM-mediated budget of 2 (spec §6.5). No infrastructure-invalidated runs occurred (attempt 0 is a client-control failure, not an AIP/server/network/fixture prerequisite failure, so it does not fall under §6.5's infrastructure-retry-budget accounting either).
 
 ## Required successful protocol workflow (spec §6.8)
 
@@ -87,7 +88,10 @@ identifiers, raw system prompts, or unrelated conversation/traffic (this AIP dem
 credential; `codex mcp add`/`get` confirmed `bearer_token_env_var: -`, `http_headers: -` throughout).
 The `User-Agent: codex-mcp-client/0.154.0` string is retained as legitimate client-version evidence,
 not a personal identifier. Raw `.pcap` and JSON transcript files were ephemeral, used only to produce
-the excerpts and summaries in this trace, and were not retained beyond this qualification run.
+the excerpts and summaries in this trace, and were not retained beyond this qualification run. The
+same statement applies to the Appendix A.2 UX observation's verbatim agent answer recorded below: it
+contains only architecture-fact content returned by AIP's own tools, with no headers, tokens,
+identifiers, or unrelated content of any kind.
 
 ## Post-client state (spec §6.12/§6.15)
 
@@ -102,23 +106,130 @@ Run in a fresh `codex exec` process/context, separate from the protocol-qualific
 
 **Prompt used:** the fixed Appendix A.2 prompt, verbatim.
 
-**Observed outcome (unedited in substance):** Codex called `get_architecture_drift` for the same
-service/environment/window, then resolved all evidence references against the returned snapshot, and
-reported both findings with an explicit "what AIP established" / "what AIP did not establish" split
-for each — e.g. for `unused-q`: established that the declared send exists and was not observed in the
-window with sufficient coverage; explicitly *not* established that the dependency is dead, unused, or
-that no consumer exists (AIP's own `DIRECT_TARGET_FALLBACK` limitation was surfaced, not glossed over).
-For `LegacyPricingService`: established one correlated OpenTelemetry observation and the absence of a
-matching declaration; explicitly *not* established authorization intent, call frequency beyond the one
-observation, or applicability outside this window/environment. No fact was asserted beyond what the
-tool responses actually returned. This is observational product evidence only, not a semantic release
-gate (spec §7.2).
+**Where visible:**
+
+| | |
+|---|---|
+| Model/provider | `gpt-5.6-sol` (OpenAI) — Codex CLI's configured default model, `reasoning_effort = medium`; not overridden by `-m` in this run |
+| Agent mode | `codex exec` (non-interactive), `-s read-only` sandbox |
+| Tool approval mode | Non-interactive default; no approval prompt was requested or reached — MCP tool calls are not gated by the exec sandbox/approval system |
+
+**§7.2 result table** (`YES` / `NO` / `PARTIAL` / `NOT_OBSERVED`):
+
+| Observation | Result |
+|---|---|
+| selected AIP | `YES` |
+| called `get_architecture_drift` | `YES` |
+| found `LegacyPricingService` | `YES` |
+| preserved `OBSERVED_ONLY` | `YES` |
+| found `unused-q` | `YES` |
+| preserved `NOT_OBSERVED_IN_WINDOW` | `YES` |
+| called `get_evidence` | `YES` |
+| preserved the same snapshot | `YES` |
+| distinguished evidence from inference | `YES` |
+| avoided unused/dead/obsolete overclaim | `YES` |
+
+**Unedited observed outcome** (the agent's final message, verbatim — sanitization statement above):
+
+> AIP found **2 architecture-drift claims** for `service:order-service` in `demo` during
+> `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`.
+>
+> Snapshot: `aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`
+>
+> All three evidence references resolved successfully against this same snapshot.
+>
+> ### 1. Declared send to `queue:unused-q` was not observed
+>
+> - **Qualification:** `NOT_OBSERVED_IN_WINDOW`
+> - **Coverage:** `SUFFICIENT`
+> - **Relationship:** `OrderService` → `SENDS` → `unused-q`
+> - **Destination resolution:** `DIRECT_TARGET_FALLBACK`
+>
+> **Why it qualified**
+>
+> AIP has declared AsyncAPI evidence that `service:order-service` sends messages to `queue:unused-q`.
+> With sufficient observational coverage, AIP found no corresponding observation during the requested
+> window.
+>
+> **Resolved evidence**
+>
+> `evidence:asyncapi:order-service`:
+>
+> - Type: declared
+> - Source: `examples/order-service/asyncapi.yaml`
+> - Supports:
+>   - `service:order-service SENDS queue:unused-q`
+>   - `queue:unused-q CARRIES message:UnusedMessage`
+>   - `message:UnusedMessage CONFORMS_TO schema:UnusedMessage`
+>
+> **What AIP established**
+>
+> - The snapshot declares that OrderService sends to `unused-q`.
+> - That dependency was not observed in the specified environment and window.
+> - Observational coverage was sufficient for the `NOT_OBSERVED_IN_WINDOW` qualification.
+>
+> **What AIP did not establish**
+>
+> - That the dependency is dead, broken, or safe to remove.
+> - That no message was ever sent outside this window.
+> - Which service consumes `unused-q`. AIP explicitly reports no single evidenced consumer and
+>   retains the queue itself as the direct target.
+>
+> ---
+>
+> ### 2. Observed call to `LegacyPricingService` lacks a matching declaration
+>
+> - **Qualification:** `OBSERVED_ONLY`
+> - **Relationship:** `OrderService` → `CALLS` → `LegacyPricingService`
+> - **Delivery:** synchronous HTTP through `GET /pricing/{sku}`
+> - **Destination resolution:** `RESOLVED_SERVICE`
+>
+> **Why it qualified**
+>
+> OpenTelemetry evidence shows OrderService calling `GET /pricing/{sku}`, and separate correlated
+> evidence resolves that operation to `LegacyPricingService`. AIP's snapshot contains no matching
+> declared dependency, so the relationship is classified as observed-only.
+>
+> **Resolved evidence**
+>
+> `evidence:otel:demo:2026-08-26:bfae54276215`:
+>
+> - Supports `service:order-service CALLS operation:service:legacypricingservice:GET:/pricing/{sku}`
+> - Observation count: `1`
+> - First/last seen: `2026-08-26T12:00:00.044222Z`
+> - Correlation: `CLIENT_SERVER`
+>
+> `evidence:otel:demo:2026-08-26:29d4976aeaf9`:
+>
+> - Supports `service:legacypricingservice PROVIDES operation:service:legacypricingservice:GET:/pricing/{sku}`
+> - Observation count: `1`
+> - Same timestamp and correlation mode
+>
+> **What AIP established**
+>
+> - One correlated client/server observation connects OrderService to the pricing operation.
+> - The operation is evidenced as provided by `LegacyPricingService`.
+> - No matching declared dependency exists in this AIP snapshot.
+>
+> **What AIP did not establish**
+>
+> - Whether the call was authorized, intentional, erroneous, or policy-violating.
+> - Whether it occurred more than once; the evidence records only one observation.
+> - Which deployed service version made or served the call; `service_version` is absent.
+> - Whether the dependency exists in other environments or time windows.
+>
+> AIP marked the overall drift response `PARTIAL` solely because the consumer identity behind
+> `unused-q` could not be resolved without guessing.
+
+This is observational product evidence only, not a semantic release gate (spec §7.2); the outcome
+above happens to be a strong one, but the UX observation's contract-complete recording — not that
+quality — is what §7.2 requires.
 
 ## Disposition
 
 - `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 6461db6d51ee29e9c973e62b005aa84d5d95c077`.
 - Zero-write, same-snapshot, reconnect, and exact-tool-count requirements all independently confirmed
   via passive capture, not inferred from the `codex exec` transcript alone.
-- Minor non-blocking documentation finding recorded above (the official Codex docs page's prose does
-  not itself show a `--url` example, unlike `examples/mcp-clients/codex.md`'s current claim) — does not
-  affect this tuple's result, since the flag is genuine and functioned exactly as used.
+- Configuration re-verification confirms `examples/mcp-clients/codex.md`'s `--url` claim is accurate
+  against current official documentation; see the narrower distinction recorded above (OAuth-flagged
+  example vs. the simpler unauthenticated form used here).
