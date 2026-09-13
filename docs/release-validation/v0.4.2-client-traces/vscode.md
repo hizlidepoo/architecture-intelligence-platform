@@ -79,7 +79,8 @@ is not offered as that.
 | 1 | `TRANSPORT_FAILURE` | `initialize` succeeded (protocol `2025-11-25` negotiated both ways); the very next message, `notifications/initialized`, was rejected by AIP with `400`/`-32600` for lacking an `MCP-Protocol-Version` header, killing the connection before `tools/list` or `prompts/list` (both already queued) ever ran |
 
 This is a **valid client attempt** per §6.5 (the I2 fixture/server/network prerequisites were healthy
-— the same fixture had just qualified Cursor moments earlier) that fails the tuple with
+— the same fixture had just handled several Cursor interactions moments earlier, with the fixture
+checker reporting `COMPLETE`, `mismatches: []` at that point) that fails the tuple with
 `TRANSPORT_FAILURE` ("prerequisites healthy enough to assess the client, but initialization, protocol
 exchange, or reconnect failed") — not `INFRASTRUCTURE_FAILURE`, because the failure is a direct,
 deterministic consequence of AIP's own handling of a specific, real request shape, not an independent
@@ -151,8 +152,11 @@ curl http://localhost:8000/mcp \
 
 Before the fix: `HTTP 400`,
 `{"jsonrpc": "2.0", "id": null, "error": {"code": -32600, "message": "A negotiated follow-up request requires an MCP-Protocol-Version header"}}`.
-After the fix: `HTTP 202` (or `200` with no error), delegated to the pinned SDK's own
-`DEFAULT_NEGOTIATED_VERSION` fallback handling, matching real VS Code behavior.
+After the fix: `HTTP 202 Accepted`, empty body — the exact contract the transport spec requires for an
+accepted notification, matching `_check_vscode_full_sequence_without_protocol_header_is_accepted`'s
+own assertion in `tests/unit/test_mcp_discovery.py`, not a looser "202 or 200" expectation. Delegated
+to the pinned SDK's own `DEFAULT_NEGOTIATED_VERSION` fallback handling, matching real VS Code
+behavior.
 
 ## Sanitization statement (spec §6.15)
 
@@ -186,9 +190,15 @@ before/after pair for this one attempt.
 - This candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) is **INVALIDATED**.
 - VS Code's tuple requires a fresh qualification attempt against the new, post-fix
   `RELEASE_CANDIDATE_SHA`, per spec §4.4 and §6.5.
-- Codex CLI, Claude Code, and Cursor's separately completed, fully successful qualification attempts
-  against this same invalidated candidate are unaffected in substance (none of their traffic exercised
-  this specific missing-header code path — all three either always sent the header, as Codex CLI and
-  Claude Code's own passive captures confirm, or Cursor's equivalent traffic was not observed to omit
-  it), but per spec §4.4 all three must still be reconfirmed against the new candidate before being
-  recorded as `QUALIFIED` for release.
+- None of Codex CLI's, Claude Code's, or Cursor's traffic against this same invalidated candidate
+  exercised this specific missing-header code path (Codex CLI and Claude Code's own passive captures
+  confirm they always sent the header; Cursor's equivalent traffic was not observed to omit it
+  either), so this defect does not itself cast doubt on those tuples' observed protocol behavior.
+  That said, their required disposition against the new candidate differs by tuple, not a single
+  blanket "reconfirm all three": **Codex CLI is `QUALIFIED`** against the invalidated candidate and
+  needs reconfirmation against the new one, per spec §4.4; **Claude Code is `QUALIFIED`** against the
+  invalidated candidate and likewise needs reconfirmation; **Cursor is `UNVERIFIED`**, not
+  `QUALIFIED`, against the invalidated candidate (see
+  `docs/release-validation/v0.4.2-client-traces/cursor.md` — a mandatory pre-client baseline was never
+  captured, independent of this VS Code finding), so Cursor still needs its **first** contract-complete
+  qualification against the new candidate, not a reconfirmation of one that never happened.
