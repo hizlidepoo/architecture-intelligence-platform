@@ -31,13 +31,24 @@ tuple's **fresh qualification cycle against the new, post-fix `RELEASE_CANDIDATE
 | Network topology | Client (host, WSL) → `localhost:8000` (published port) → `architecture-intelligence` container |
 | Configuration mechanism | `claude mcp add --transport http --scope local aip http://localhost:8000/mcp` (per `examples/mcp-clients/claude-code.md`), scope `local` |
 | Transport | Streamable HTTP |
-| Approval mode | `claude -p --allowedTools "mcp__aip__get_architecture_drift,mcp__aip__get_evidence,mcp__aip__get_service_dependencies"` — the three AIP tools pre-authorized by name for this non-interactive run; no approval prompt was requested or reached; `permission_denials: []` in every run's JSON output |
 | Candidate SHA | `6461db6d51ee29e9c973e62b005aa84d5d95c077` |
 | Returned `producer.build_revision` | `6461db6d51ee29e9c973e62b005aa84d5d95c077` (exact match, confirmed live in every tool response below) |
 | Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
 | Observed initialization/protocol version | `2025-11-25` (negotiated mode, confirmed by passive capture) |
 | Session IDs issued / used / reuse | None observed (no `mcp-session-id` header in any client process's traffic) |
 | Qualification date | 2026-09-13 |
+
+### Approval behavior (spec §6.7)
+
+| Field | Value |
+|---|---|
+| Approval mode | `claude -p --allowedTools "mcp__aip__get_architecture_drift,mcp__aip__get_evidence,mcp__aip__get_service_dependencies"` — the three AIP tools pre-authorized by name for this non-interactive run |
+| Approval requested | No — `permission_denials: []` in every run's JSON output |
+| Manual approval required | No |
+| Persistent allow enabled | No — `--allowedTools` is a process-local flag scoped to each individual `claude -p` invocation; confirmed no `.claude/settings*.json` or other persisted-permission file was created anywhere under the qualification worktree by any of the three `claude -p` runs, and `~/.claude.json` only ever gained the `claude mcp add`/`remove` server-registration entries, never a persisted tool-allow entry |
+
+The same four values apply unchanged to the separate Appendix A.2 UX run below — the identical
+`--allowedTools` invocation shape was used, and it likewise recorded `permission_denials: []`.
 
 ### Configuration re-verification (spec §6.4)
 
@@ -98,17 +109,29 @@ candidate now completes cleanly.
 | 9 | Reconnect/reinitialize | A second, independent `claude -p` process (fresh session ID, fresh prompt) performed its own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch (identical shape to run 1's, confirmed in the same passive capture). |
 | 10 | One read-only tool works after reconnect | That second process's `mcp__aip__get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`) and `producer.build_revision = 6461db6d51ee29e9c973e62b005aa84d5d95c077` — again the exact candidate SHA. |
 
-**Direct confirmation the exact original trigger is now handled cleanly:** the passive capture shows
-every one of the 4 client processes (including the two `claude mcp get`/`list` connectivity checks —
-the exact commands that hung the pre-fix candidate) opens with the identical
+**Confirmation that the real client no longer reaches the former trigger path** (not, by itself,
+direct execution of the exact original hanging request — see below): the passive capture shows every
+one of the 4 client processes (including the two `claude mcp get`/`list` connectivity checks — the
+exact commands that hung the pre-fix candidate) opens with the identical
 `mcp-method: server/discover` / `mcp-protocol-version: 2026-07-28` probe found in the original
-root-cause isolation below, `User-Agent: claude-code/2.1.270 (sdk-cli)` unchanged. Every one of the 4
-now returns instantly: `HTTP 404`, `{"jsonrpc": "2.0", "id": "server-discover-probe-1", "error":
-{"code": -32601, "message": "Method not found", "data": "server/discover"}}`. No client process in
-this capture ever sent `subscriptions/listen` at all — the clean rejection of `server/discover`
-evidently causes the client to skip that follow-up call entirely and fall through to its ordinary
-negotiated `initialize` (protocol `2025-11-25`), rather than continuing down the path that used to
-hang. `/health` and the rest of the demo remained responsive throughout every process.
+root-cause isolation below, `User-Agent: claude-code/2.1.270 (sdk-cli)` unchanged. `server/discover`
+itself never hung, before or after the fix — the original root-cause isolation's own finding is that
+`server/discover` always returned a plausible `200 OK`, and the actual hanging request was the
+*follow-up* `mcp-method: subscriptions/listen` sent immediately after it. In this run, every one of
+the 4 `server/discover` probes now returns instantly with a clean rejection instead (`HTTP 404`,
+`{"jsonrpc": "2.0", "id": "server-discover-probe-1", "error": {"code": -32601, "message": "Method not
+found", "data": "server/discover"}}`), and — critically — no client process in this capture ever sent
+`subscriptions/listen` at all: the clean rejection of `server/discover` evidently causes the client to
+skip that follow-up call entirely and fall through to its ordinary negotiated `initialize` (protocol
+`2025-11-25`). This proves the real client's actual negotiation path no longer reaches the former
+trigger request under real, unmodified client behavior; it does not itself exercise
+`subscriptions/listen`. For direct proof that `subscriptions/listen` itself now returns `-32601`
+without hanging (rather than inferring it from the client never sending it), see
+`tests/integration/test_mcp_direct_marker_dos_regression.py::test_subscriptions_listen_cannot_hang_the_server`
+(the exact real-world reproduction, run in a subprocess with an OS-enforced timeout) and the sanitized
+`curl` reproduction in the Historical record's "Sanitized reproduction" section below, both added by
+the ADR 0014 amendment. `/health` and the rest of the demo remained responsive throughout every
+process in this run.
 
 ### Sanitization statement (spec §6.15)
 
