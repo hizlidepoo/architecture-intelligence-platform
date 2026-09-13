@@ -126,12 +126,21 @@ AIP demo endpoint requires no credential at all). The client-identifying string
 personal identifier. Raw `.pcap` capture files were ephemeral, used only for this investigation, and
 were not retained beyond it.
 
-## Post-client state
+## Post-client state (spec §6.12/§6.15)
 
-The environment was restored to a clean, healthy state after this finding (container restarted,
-fixture torn down) before proceeding. No I2 fixture, revision-fence, or snapshot-continuity claim is
-made for this attempt — it never reached a successful tool call, so §6.12's post-client write/state
-gate does not apply to a `TRANSPORT_FAILURE` result.
+| Field | Value |
+|---|---|
+| `revision_after` | `NOT_CAPTURED` — the server was completely unresponsive (hung, ~100% CPU) at the moment of failure; by the time it was restarted and queryable again, this attempt's window had closed, so no value was read for *this specific tuple attempt*. Not to be confused with `R = 9` recorded separately for a later, independent re-verification pass. |
+| Fixture-check result | `NOT_EXECUTED` for the same reason — the checker could not be run against an unresponsive server, and no re-run before restart would have been a result *for this attempt*. |
+
+These fields are recorded explicitly as unavailable, not treated as inapplicable: spec §6.15 requires
+every committed trace artifact to record revision-before/after and the fixture-check result
+regardless of outcome, and the governing spec defines no blanket exemption for a `TRANSPORT_FAILURE`
+result. `revision_before = 9` (recorded above, spec §6.3, before the client was configured) is the
+only revision-fence value this attempt actually captured.
+
+The environment was restored to a clean, healthy state (container restarted, fixture torn down)
+before proceeding to root-cause investigation and the fix.
 
 ## Disposition
 
