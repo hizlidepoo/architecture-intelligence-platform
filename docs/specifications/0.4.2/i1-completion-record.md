@@ -42,7 +42,10 @@ added by the guard fix (PR #145) to prove the exact real-world `subscriptions/li
 terminates within a strict, OS-enforced timeout instead of hanging the server. The guard fix's own
 added unit-level checks in `tests/unit/test_mcp_discovery.py` (an unimplemented-method rejection check
 for a second method, a header/body-mismatch-priority check, and a post-rejection server-health check,
-net of one removed check that was not actually fail-bounded — review finding, see below) are helper
+net of one removed check — an in-process `asyncio.wait_for`-based version of the `subscriptions/listen`
+reproduction that a PR #145 review round found was not actually fail-bounded, since the offending SDK
+code never yields to the event loop for `wait_for`'s cancellation to run; replaced by the subprocess-
+isolated integration test below) are helper
 functions called from inside the single existing `test_mcp_protocol_and_discovery` test, so they add
 **zero** collected unit-test items; they strengthen that one test's assertions without changing the
 unit count. The 1001 unit count (+3 over 998) is entirely unrelated unit coverage from PRs #142/#143
