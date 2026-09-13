@@ -39,13 +39,15 @@ now, after I1 and I2 are both complete, satisfying that gate.
 288 integration tests = the 287 count at `71e2d8b` + 1 new subprocess-isolated regression test,
 `tests/integration/test_mcp_direct_marker_dos_regression.py::test_subscriptions_listen_cannot_hang_the_server`,
 added by the guard fix (PR #145) to prove the exact real-world `subscriptions/listen` reproduction now
-terminates within a strict, OS-enforced timeout instead of hanging the server. The 1001 unit count
-(+3 over 998) reflects that same fix's added coverage in `tests/unit/test_mcp_discovery.py` (an
-unimplemented-method rejection check for a second method, a header/body-mismatch-priority check, and
-a post-rejection server-health check) net of one removed check that was not actually fail-bounded
-(review finding, see below), plus unrelated unit coverage from PRs #142/#143 that merged into `main`
-in the same commit range (evidence-reference validation, OpenAPI version metadata) — neither of which
-touches I1's transport behavior.
+terminates within a strict, OS-enforced timeout instead of hanging the server. The guard fix's own
+added unit-level checks in `tests/unit/test_mcp_discovery.py` (an unimplemented-method rejection check
+for a second method, a header/body-mismatch-priority check, and a post-rejection server-health check,
+net of one removed check that was not actually fail-bounded — review finding, see below) are helper
+functions called from inside the single existing `test_mcp_protocol_and_discovery` test, so they add
+**zero** collected unit-test items; they strengthen that one test's assertions without changing the
+unit count. The 1001 unit count (+3 over 998) is entirely unrelated unit coverage from PRs #142/#143
+that merged into `main` in the same commit range (two evidence-reference-validation tests, one
+OpenAPI-version-metadata test) — neither of which touches I1's transport behavior.
 
 ## I1 §3.1 required items
 
