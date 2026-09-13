@@ -221,23 +221,30 @@ non-`initialize` request as an outright rejection ("A negotiated follow-up reque
 MCP-Protocol-Version header"), on the assumption that the header's presence was mandatory for the
 request to be trustworthy at all.
 
-Two independent facts contradict that assumption. First, the MCP specification's own text says: *"if
-the server does not receive an MCP-Protocol-Version header, and has no other way to identify the
-version... the server SHOULD assume protocol version 2025-03-26"* — a graceful backward-compatibility
-default, not a mandate to reject. Second, the exact MCP SDK AIP has pinned (`mcp==2.2.0`) already
-implements that graceful default itself: `mcp.server.streamable_http` falls back to a
-`DEFAULT_NEGOTIATED_VERSION` constant when the header is absent, and its own `_validate_request_headers`
-comment states outright that "the legacy version-gate is gone." AIP's guard, sitting in front of that
-SDK, was **stricter than both the spec and the SDK it wraps**.
+Two independent facts contradict that assumption, and they establish two *separate* normative points,
+not one. The MCP specification's own text says both: *"the client MUST include the
+MCP-Protocol-Version... header on all subsequent requests"* **and**, separately, for backward
+compatibility, *"if the server does not receive an MCP-Protocol-Version header, and has no other way
+to identify the version... the server SHOULD assume protocol version 2025-03-26."* A client omitting
+the header is not itself spec-conformant — but the spec still directs a *server* that receives such a
+request to tolerate it gracefully, not reject it. AIP's guard conflated these: it enforced the
+client-side `MUST` as a hard rejection, with no allowance at all for the server-side `SHOULD`. Second,
+the exact MCP SDK AIP has pinned (`mcp==2.2.0`) already implements that server-side graceful default
+itself: `mcp.server.streamable_http` falls back to a `DEFAULT_NEGOTIATED_VERSION` constant when the
+header is absent, and its own `_validate_request_headers` comment states outright that "the legacy
+version-gate is gone." AIP's guard, sitting in front of that SDK, was **stricter than both the spec's
+own server-side allowance and the SDK it wraps** — even though the traffic triggering it was not
+itself perfectly spec-conformant client behavior.
 
 VS Code's real MCP client exposed this directly: it negotiated a current protocol version
 (`protocolVersion: "2025-11-25"`) correctly via `initialize` — AIP responded successfully — and then
-sent `notifications/initialized` with no `MCP-Protocol-Version` header at all, exactly as the spec's
-backward-compatibility clause anticipates a client's follow-up traffic might look. AIP's guard
-rejected it with `400`/`-32600` before `tools/list` ever ran, killing the connection outright. **Under
-the pre-fix candidate, VS Code could not connect to AIP at all, in any invocation** — not an
-intermittent or edge-case failure. Full finding recorded in
-`docs/release-validation/v0.4.2-client-traces/vscode.md`.
+sent `notifications/initialized` with no `MCP-Protocol-Version` header at all (an omission the spec's
+client-side `MUST` does not authorize, but one its server-side backward-compatibility clause exists
+specifically to accommodate). AIP's guard rejected it with `400`/`-32600` before `tools/list` ever ran,
+killing the connection outright. **Under the pre-fix candidate, VS Code could not connect to AIP at
+all, in any invocation** — not an intermittent or edge-case failure, and a real, release-blocking
+interoperability defect regardless of which side's spec obligation was technically at issue. Full
+finding recorded in `docs/release-validation/v0.4.2-client-traces/vscode.md`.
 
 **Fix** (`app/mcp/guard.py`): the negotiated-mode branch no longer treats a missing
 `MCP-Protocol-Version` header as a rejection reason. A markerless non-`initialize` request with no

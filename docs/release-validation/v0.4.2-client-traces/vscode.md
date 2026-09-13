@@ -3,13 +3,27 @@
 Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparation.md`](../../specifications/0.4.2/i3-client-qualification-and-release-preparation.md)
 §5 (Qualified Client Tuple Contract), §6 (Actual-Client Qualification Procedure), Appendix B.
 
-## Result: **FAILED** — root cause: product defect (negotiated missing-header handling), not client incompatibility
+## Result: **FAILED** — root cause: product defect (AIP was stricter than the spec's own backward-compatibility allowance), not merely client incompatibility
 
-This is not "VS Code failed to qualify." A real, current, fully spec-compliant MCP client (GitHub
-Copilot Chat's built-in MCP support in VS Code) sent an ordinary request as part of its normal
-connection handshake, and AIP rejected it outright, killing the connection before any tool could ever
-be called. The defect is fixed (ADR 0014's second "Amendment" section); this tuple must be requalified
-against the new post-fix `RELEASE_CANDIDATE_SHA` before it can be marked `QUALIFIED`.
+This is not simply "VS Code failed to qualify," but it is also not "VS Code did nothing wrong." Two
+distinct normative statements are both true at once, per the MCP specification's own Protocol Version
+Header section (`basic/transports#protocol-version-header`):
+
+- The client **MUST** include `MCP-Protocol-Version` on every subsequent HTTP request. GitHub Copilot
+  Chat's built-in MCP client in VS Code does not do this on `notifications/initialized` (and
+  presumably later follow-ups) — that omission is itself **not** spec-conformant client behavior.
+- Separately, for backward compatibility, a server that receives no such header and has no other way
+  to identify the version **SHOULD assume** protocol version `2025-03-26` rather than reject the
+  request outright.
+
+AIP's guard implemented neither of these correctly: it enforced the client-side `MUST` as a hard
+rejection at the transport layer, with no allowance for the server-side `SHOULD` tolerate this exact
+case. The practical effect was a real, widely-used client (VS Code 1.137.0 + GitHub Copilot Chat)
+being unable to connect to AIP at all, in any invocation — a release-blocking interoperability defect,
+independent of whose spec obligation was actually violated. The defect is fixed (ADR 0014's second
+"Amendment" section) to make AIP tolerant per the spec's own backward-compatibility clause; this tuple
+must be requalified against the new post-fix `RELEASE_CANDIDATE_SHA` before it can be marked
+`QUALIFIED`.
 
 Executed by the repository owner on their own machine (VS Code has no CLI/headless automation path;
 per the I3 plan, Cursor and VS Code qualification is operator-run). Evidence for this trace is the
@@ -87,15 +101,20 @@ the official MCP specification text — not accepted at face value:
    (nor, presumably, on the queued `prompts/list`/`tools/list`, though the connection never survived
    long enough to observe those).
 4. **This is not "VS Code is an old/legacy client."** VS Code correctly negotiated a *current* protocol
-   version, `2025-11-25` — not an old pre-header-requirement era. It simply omits the header on
-   follow-ups, a behavior the MCP specification explicitly anticipates and accommodates.
+   version, `2025-11-25` — not an old pre-header-requirement era. It omits the header on follow-ups
+   regardless, which is not itself spec-conformant client behavior (see next point) — but the spec
+   directs servers to tolerate exactly this gracefully rather than reject it.
 5. **Independently verified against the MCP specification's own text**
-   (`modelcontextprotocol.io/specification/2025-06-18/basic/transports`, "Protocol Version Header"):
+   (`modelcontextprotocol.io/specification/2025-11-25/basic/transports`, "Protocol Version Header"):
    *"If using HTTP, the client MUST include the MCP-Protocol-Version... header on all subsequent
    requests... For backwards compatibility, if the server does not receive an MCP-Protocol-Version
    header, and has no other way to identify the version... the server SHOULD assume protocol version
-   2025-03-26."* The spec anticipates a missing header and prescribes a graceful default, not
-   rejection.
+   2025-03-26."* These are two distinct, both-true normative statements: VS Code's own omission is a
+   **client-side non-conformance** (the `MUST` is violated), while AIP's outright rejection was a
+   separate, **server-side non-conformance** (the `SHOULD assume ... 2025-03-26` backward-compatibility
+   allowance was not honored). Fixing AIP's side does not retroactively make VS Code's traffic
+   spec-conformant — it makes AIP correctly tolerant of real-world non-conformant traffic exactly as
+   the spec's own backward-compatibility clause directs.
 6. **Independently verified against the pinned SDK's own source** (`mcp==2.2.0`,
    `mcp/server/streamable_http.py`): a `DEFAULT_NEGOTIATED_VERSION` constant is used as a fallback
    whenever `request.headers.get(MCP_PROTOCOL_VERSION_HEADER, DEFAULT_NEGOTIATED_VERSION)` is

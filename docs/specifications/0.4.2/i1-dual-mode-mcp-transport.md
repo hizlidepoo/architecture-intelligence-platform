@@ -329,29 +329,43 @@ Reason:
 
 ## 11. Normative Routing and Negotiated Follow-Up Rule
 
-Only `initialize` MAY be markerless.
+Every markerless request (one carrying none of §10's direct-envelope markers) is a **negotiated
+candidate**. `initialize` is always delegated to the pinned SDK. For any other markerless request, its
+`MCP-Protocol-Version` header decides delegation vs. rejection per the corrected rule below.
 
 **Correction (I3.4 VS Code actual-client qualification finding — see ADR 0014's "Amendment" section
-for the full narrative):** this section originally required `MCP-Protocol-Version` to be *present* on
-every non-`initialize` markerless request, rejecting a missing header before SDK tool dispatch. Live
-qualification against GitHub Copilot Chat's MCP client in VS Code 1.137.0 found this stricter than
-both the MCP specification itself (which says a server receiving no such header "SHOULD assume
-protocol version 2025-03-26" rather than reject — spec, Protocol Version Header) and the pinned SDK's
-own already-implemented behavior (`DEFAULT_NEGOTIATED_VERSION` fallback in
-`mcp.server.streamable_http`, whose own comment states its "legacy version-gate is gone"). VS Code
-negotiated a current protocol version (`2025-11-25`) correctly via `initialize`, then sent
-`notifications/initialized` and subsequent follow-ups with no `MCP-Protocol-Version` header at all —
-the strict rejection killed the connection immediately, before `tools/list` ever ran, making VS Code
-unable to connect to AIP under any invocation. The rule below is corrected accordingly.
+for the full narrative):** this section originally stated "Only `initialize` MAY be markerless" and
+required `MCP-Protocol-Version` to be *present* on every other markerless request, rejecting a missing
+header before SDK tool dispatch. Live qualification against GitHub Copilot Chat's MCP client in VS
+Code 1.137.0 found the missing-header rejection stricter than the pinned SDK's own already-implemented
+behavior (`DEFAULT_NEGOTIATED_VERSION` fallback in `mcp.server.streamable_http`, whose own comment
+states its "legacy version-gate is gone") and than the MCP specification's own server-side
+backward-compatibility allowance for exactly this case (see next paragraph for the precise two-sided
+statement). VS Code negotiated a current protocol version (`2025-11-25`) correctly via `initialize`,
+then sent `notifications/initialized` and subsequent follow-ups with no `MCP-Protocol-Version` header
+at all — the strict rejection killed the connection immediately, before `tools/list` ever ran, making
+VS Code unable to connect to AIP under any invocation. The old "Only `initialize` MAY be markerless"
+statement is retired (it now contradicts §11.1's own routing table, which delegates certain other
+markerless requests too) and replaced by the "negotiated candidate" framing above; the rule below is
+corrected accordingly.
 
-For any non-`initialize` request with no AIP direct-envelope marker:
+The MCP specification states two distinct, both-true normative requirements here, not one: the
+**client** MUST include `MCP-Protocol-Version` on every subsequent request (omitting it is not itself
+spec-conformant client behavior), and, separately, a **server** that receives no such header and has no
+other way to identify the version SHOULD assume protocol version `2025-03-26` rather than reject the
+request — a backward-compatibility allowance for real, non-conformant-but-common traffic, not a license
+authorizing clients to omit the header. AIP's rule below implements the server-side allowance; it does
+not retroactively make a client's own omission spec-conformant.
+
+For any non-`initialize` markerless request:
 
 1. if `MCP-Protocol-Version` is present, it MUST NOT name the direct/single-exchange era (rejected
    below if it does), and the pinned SDK MUST recognize any other value as a supported
    **handshake-era negotiated protocol version** or reject it per its own recognition rules;
 2. if `MCP-Protocol-Version` is **absent**, the request is delegated to the pinned SDK, which applies
-   its own graceful missing-header default — this is spec-anticipated, backward-compatible traffic,
-   not a violation.
+   its own graceful missing-header default, per the server-side backward-compatibility allowance above
+   — AIP MUST NOT reject this case, even though the client's own omission is not itself
+   spec-conformant.
 
 AIP MUST use the pinned SDK's own classifier/constants for handshake-era recognition rather than maintain an independent protocol-era list.
 
@@ -1014,7 +1028,8 @@ I1 is complete only when all of the following are true:
       other method is rejected with `METHOD_NOT_FOUND` and never forwarded to the mounted SDK app.
 - [ ] Every routing truth-table row has executable coverage.
 - [ ] `MCP-Protocol-Version` alone does not select direct mode.
-- [ ] Only `initialize` may be markerless.
+- [ ] Every markerless request is a negotiated candidate; `initialize` is always delegated (I3.4
+      correction — retired the earlier, now-contradictory "only `initialize` may be markerless").
 - [ ] Markerless non-`initialize` `tools/list` and `tools/call` reach the pinned SDK regardless of
       whether `MCP-Protocol-Version` is present or absent (I3.4 correction), UNLESS the header is
       present and names the direct/single-exchange era, which is still rejected.

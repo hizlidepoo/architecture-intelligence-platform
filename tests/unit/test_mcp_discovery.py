@@ -420,8 +420,8 @@ def _negotiated_tools_call_body(
 async def _check_markerless_initialize_reaches_negotiated_sdk_path(
     client: httpx.AsyncClient,
 ) -> None:
-    """Only `initialize` may be markerless - it must reach the pinned SDK's own negotiation, not
-    the guard's direct-mode ladder, even with no `MCP-Protocol-Version` header at all."""
+    """A markerless `initialize` is always delegated to the pinned SDK's own negotiation, not the
+    guard's direct-mode ladder, even with no `MCP-Protocol-Version` header at all."""
     response = await client.post(
         "/mcp", headers=_negotiated_headers(), json=_negotiated_initialize_body()
     )
@@ -609,36 +609,36 @@ async def _check_negotiated_tools_call_shares_the_direct_tool_implementation(
     assert result["content"][0]["text"] == "Error executing tool get_architecture_drift"
 
 
-async def _check_vscode_notifications_initialized_without_header_is_accepted(
+async def _check_vscode_full_sequence_without_protocol_header_is_accepted(
     client: httpx.AsyncClient,
 ) -> None:
-    """The exact real-world reproduction (v0.4.2 I1 amendment, I3.4 VS Code actual-client-
-    qualification finding): GitHub Copilot Chat's MCP client, in VS Code 1.137.0, negotiates
-    `protocolVersion: "2025-11-25"` via `initialize` and then sends `notifications/initialized`
-    with no `MCP-Protocol-Version` header at all. Before this fix, that was a hard 400
-    (`"A negotiated follow-up request requires an MCP-Protocol-Version header"`), which killed the
-    connection outright before `tools/list` ever ran - VS Code could not connect to AIP at all.
-    `notifications/initialized` is a JSON-RPC *notification* (no `id` field), which is exactly why
-    the real error response VS Code received carried `"id": null`."""
+    """The exact real-world reproduction, as one dedicated scenario (v0.4.2 I1 amendment, I3.4 VS
+    Code actual-client-qualification finding), not spread across the aggregate test's other
+    unrelated requests: GitHub Copilot Chat's MCP client, in VS Code 1.137.0, negotiates
+    `protocolVersion: "2025-11-25"` via `initialize`, sends `notifications/initialized` with no
+    `MCP-Protocol-Version` header at all, then `tools/list`, also with no header. Before this fix,
+    the notification was a hard 400 (`"A negotiated follow-up request requires an
+    MCP-Protocol-Version header"`), which killed the connection outright before `tools/list` ever
+    ran - VS Code could not connect to AIP at all. `notifications/initialized` is a JSON-RPC
+    *notification* (no `id` field), which is exactly why the real error response VS Code received
+    carried `"id": null`; per the transport spec, an accepted notification returns exactly
+    `202 Accepted` with an empty body - not "200 or something", asserted precisely here."""
+    init_response = await client.post(
+        "/mcp", headers=_negotiated_headers(), json=_negotiated_initialize_body()
+    )
+    assert init_response.status_code == 200
+    assert init_response.json()["result"]["protocolVersion"] == "2025-11-25"
+
     notification = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-    response = await client.post("/mcp", headers=_negotiated_headers(), json=notification)
-    assert response.status_code in (200, 202)
-    if response.content:
-        assert "error" not in response.json()
+    notif_response = await client.post("/mcp", headers=_negotiated_headers(), json=notification)
+    assert notif_response.status_code == 202
+    assert notif_response.content == b""
 
-
-async def _check_vscode_tools_list_after_notification_without_header_is_accepted(
-    client: httpx.AsyncClient,
-) -> None:
-    """Continuing the exact VS Code sequence: `tools/list` immediately after
-    `notifications/initialized`, also with no `MCP-Protocol-Version` header, must succeed rather
-    than be rejected - proving the full real-world sequence works end to end, not just one
-    isolated request shape."""
-    response = await client.post(
+    tools_response = await client.post(
         "/mcp", headers=_negotiated_headers(), json=_negotiated_tools_list_body()
     )
-    assert response.status_code == 200
-    names = [tool["name"] for tool in response.json()["result"]["tools"]]
+    assert tools_response.status_code == 200
+    names = [tool["name"] for tool in tools_response.json()["result"]["tools"]]
     assert names == ["get_architecture_drift", "get_evidence", "get_service_dependencies"]
 
 
@@ -836,8 +836,7 @@ async def test_mcp_protocol_and_discovery() -> None:
             await _check_malformed_json_without_direct_header_reaches_sdk_parse_handler(client)
             await _check_malformed_json_with_direct_header_is_owned_by_direct_path(client)
             await _check_negotiated_tools_call_shares_the_direct_tool_implementation(client)
-            await _check_vscode_notifications_initialized_without_header_is_accepted(client)
-            await _check_vscode_tools_list_after_notification_without_header_is_accepted(client)
+            await _check_vscode_full_sequence_without_protocol_header_is_accepted(client)
             await _check_another_unimplemented_direct_marked_method_is_also_rejected(client)
             await _check_header_body_mismatch_takes_priority_over_unimplemented_method(client)
             await _check_server_stays_responsive_after_rejecting_an_unimplemented_direct_method(
