@@ -31,20 +31,38 @@ module docstring for exactly what was verified live and why):
 
 ## Negotiated mode (new in v0.4.2 I1)
 
-A request is routed to direct-mode validation above when it carries at least one AIP-specific
-direct-envelope marker: the `mcp-method`/`mcp-name` HTTP headers, or `params._meta`'s
+A request is routed to direct-mode validation above when it carries at least one of these header/body
+markers: the `mcp-method`/`mcp-name` HTTP headers, or `params._meta`'s
 `io.modelcontextprotocol/protocolVersion`/`clientCapabilities` keys in the body. `MCP-Protocol-
 Version` alone, and an MCP session identifier alone, are deliberately NOT direct-mode markers - both
 are legitimate on ordinary negotiated SDK traffic. AIP does not run a second general MCP
-protocol-era classifier: it only decides "does this request carry an AIP-specific direct marker or
-not" and otherwise defers entirely to the pinned SDK's own `initialize`/negotiation/session
-machinery, importing `MODERN_PROTOCOL_VERSIONS` (the same constant `classify_inbound_request` uses)
-rather than hard-coding `"2026-07-28"` to recognize the one case that must still be rejected: a
-non-`initialize`, markerless request whose `MCP-Protocol-Version` names the direct/single-exchange
-era - that combination must never be silently served as negotiated follow-up traffic. Once a request
-is classified as direct (by header OR body marker), that classification is sticky even if the body
-turns out to be malformed - the direct path owns the failure response rather than falling through to
-the SDK's negotiated parse handler.
+protocol-era classifier: it only decides "does this request carry a direct marker or not" and
+otherwise defers entirely to the pinned SDK's own `initialize`/negotiation/session machinery,
+importing `MODERN_PROTOCOL_VERSIONS` (the same constant `classify_inbound_request` uses) rather than
+hard-coding `"2026-07-28"` to recognize the one case that must still be rejected: a non-`initialize`,
+markerless request whose `MCP-Protocol-Version` names the direct/single-exchange era - that
+combination must never be silently served as negotiated follow-up traffic. Once a request is
+classified as direct (by header OR body marker), that classification is sticky even if the body turns
+out to be malformed - the direct path owns the failure response rather than falling through to the
+SDK's negotiated parse handler.
+
+**These markers are not AIP-proprietary** - `MCP_METHOD_HEADER`/`MCP_NAME_HEADER` are the pinned SDK's
+own header names (imported from `mcp.shared.inbound`, not invented here), and real MCP clients can
+legitimately send them for their own SDK-native purposes unrelated to AIP's historical `tools/list`/
+`tools/call`-only hero-demo envelope (v0.4.2 I3.3 actual-client-qualification finding: Claude Code's own MCP client
+sends `mcp-method: server/discover` and `mcp-method: subscriptions/listen` as part of its ordinary
+capability-discovery/notification-subscription handshake under protocol era `2026-07-28`). A request
+carrying a direct marker is therefore validated against `_DIRECT_MODE_METHODS` - the closed set of
+methods direct mode has ever actually implemented (`tools/list`, `tools/call`) - and anything else is
+rejected with a fast, deterministic `METHOD_NOT_FOUND` **before** ever reaching `self._app`, rather
+than being forwarded on the assumption that "carries a direct marker" implies "is safe to dispatch
+into the mounted SDK app unmodified". Forwarding an unrecognized-but-SDK-native method blindly is
+exactly how a real client's ordinary traffic previously reached an SDK code path
+(`subscriptions/listen`'s long-lived-notification handling) that hangs indefinitely under AIP's
+stateless single-worker deployment - a single such request pegged the process and made it unresponsive
+to every other client, including its own health check. This is a closed allowlist by design, not a
+per-method denylist: any future SDK-native method this guard has not been taught about is rejected the
+same way, never blindly trusted.
 
 Every non-POST method (`GET`, `DELETE`, `HEAD`, and everything else) is rejected with HTTP 405
 before the SDK is invoked at all, since this stateless release advertises no SSE stream or session
@@ -73,7 +91,7 @@ from mcp.shared.inbound import (
     classify_inbound_request,
 )
 from mcp_types import CLIENT_CAPABILITIES_META_KEY, PROTOCOL_VERSION_META_KEY
-from mcp_types.jsonrpc import INVALID_PARAMS, INVALID_REQUEST, PARSE_ERROR
+from mcp_types.jsonrpc import INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, PARSE_ERROR
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -82,6 +100,13 @@ from app.mcp.server import TOOL_NAMES
 MCP_PATH = "/mcp"
 _EXPECTED_ARGUMENT_KEY = "request"
 _DEFAULT_HTTP_STATUS = 400
+
+# The closed set of methods direct mode has ever actually implemented (see module docstring's
+# "These markers are not AIP-proprietary" section for why this allowlist exists at all - a
+# real client's own SDK-native, non-AIP method reaching this guard's direct-marked path must
+# never be blindly forwarded into the mounted SDK app on the assumption that "carries a direct
+# marker" implies "is a method direct mode actually supports").
+_DIRECT_MODE_METHODS = frozenset({"tools/list", "tools/call"})
 _METHOD_NOT_ALLOWED_STATUS = 405
 _METHOD_NOT_ALLOWED_BODY = json.dumps(
     {
@@ -203,7 +228,21 @@ class ModernProtocolGuard:
                 )
                 return
 
-            if parsed.get("method") == "tools/call":
+            method = parsed.get("method")
+            if method not in _DIRECT_MODE_METHODS:
+                # A direct-marked request naming a method direct mode has never implemented -
+                # e.g. a real client's own SDK-native `server/discover`/`subscriptions/listen`
+                # traffic that happens to carry the same header names AIP's own hero-demo script
+                # uses. Reject fast and deterministically rather than forwarding into the mounted
+                # SDK app on a hope-it-works basis (see module docstring).
+                await _send_json_error(
+                    send,
+                    ERROR_CODE_HTTP_STATUS.get(METHOD_NOT_FOUND, _DEFAULT_HTTP_STATUS),
+                    _error_body(request_id, METHOD_NOT_FOUND, "Method not found", method),
+                )
+                return
+
+            if method == "tools/call":
                 params = parsed.get("params") if isinstance(parsed.get("params"), dict) else {}
                 name = params.get("name")
                 arguments = (
