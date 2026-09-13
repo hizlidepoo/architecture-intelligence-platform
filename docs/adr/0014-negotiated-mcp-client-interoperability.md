@@ -257,11 +257,13 @@ delegating it as negotiated traffic would be a real no-downgrade violation. An e
 otherwise-unrecognized version value is still handled entirely by the SDK's own recognition/error
 semantics, unchanged.
 
-Regression coverage added to `tests/unit/test_mcp_discovery.py`: the exact real-world
-`notifications/initialized` request VS Code sends, with no header, now succeeds
-(`_check_vscode_notifications_initialized_without_header_is_accepted`), and the exact
-follow-on `tools/list` in that same real sequence also succeeds
-(`_check_vscode_tools_list_after_notification_without_header_is_accepted`); the general markerless
+Regression coverage added to `tests/unit/test_mcp_discovery.py`: one dedicated scenario test,
+`_check_vscode_full_sequence_without_protocol_header_is_accepted`, performs the exact real-world
+`initialize` → `notifications/initialized` → `tools/list` sequence VS Code sends (all three requests
+itself, not relying on adjacent-test call order), asserting the negotiated `2025-11-25` `initialize`
+result, the notification's exact `202 Accepted`/empty-body response (not merely "not a 400"), and a
+successful three-tool `tools/list` immediately after — all with no `MCP-Protocol-Version` header
+present anywhere in the sequence; the general markerless
 `tools/list`/`tools/call`-without-header checks were updated from asserting rejection to asserting the
 SDK fallback now answers them normally; a session identifier alone (still no version header) is
 likewise now delegated to the SDK, not rejected; the direct-era-header-present-without-marker

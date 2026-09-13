@@ -55,11 +55,22 @@ operator's relayed VS Code MCP output-channel log with trace logging enabled (cl
 ## Pre-client state (spec §6.2/§6.3)
 
 `examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
-`6461db6d51ee29e9c973e62b005aa84d5d95c077`, from the same clean worktree/fixture already used for this
-candidate's Cursor tuple (`docs/release-validation/v0.4.2-client-traces/cursor.md`) — confirmed
-`COMPOSE_PROJECT_NAME`-isolated, fixture `COMPLETE`, revision `9` at that point (see Cursor's trace for
-the exact pre-Cursor baseline; VS Code was configured immediately after Cursor's qualification on the
-same running fixture, with `revision = 9` reconfirmed then).
+`6461db6d51ee29e9c973e62b005aa84d5d95c077`, run once and shared across this candidate's Cursor and VS
+Code tuples — this was **not** a fresh `--serve` dedicated to VS Code alone, and this is stated
+plainly rather than implying otherwise.
+
+`check_fixture_state.py`/`read_revision_fence.py` were run exactly once during this shared session:
+after Cursor's three chat interactions had already completed, and *before* VS Code was configured or
+touched AIP in any way (`fixture = COMPLETE`, `mismatches: []`, `revision = 9`; see that same reading
+recorded as Cursor's *post*-client state in `docs/release-validation/v0.4.2-client-traces/cursor.md`,
+which is `UNVERIFIED` precisely because no baseline exists *before* Cursor — this reading does not
+establish one for Cursor, and this trace does not claim otherwise). Chronologically, that single
+reading sits strictly between Cursor's interactions and VS Code's, so it legitimately serves as this
+tuple's own `revision_before = 9`/`fixture = COMPLETE` pre-client baseline — no VS Code traffic had
+occurred yet — but it is a baseline for a fixture that Cursor's three (read-only) tool calls had
+already exercised, not a pristine post-seed state. This distinction matters if this trace is ever read
+as evidence for anything about the fixture's state before *any* client touched it; it is not that, and
+is not offered as that.
 
 ## Attempt record (spec §6.5/§6.6)
 
@@ -157,8 +168,8 @@ exists for this trace beyond the text already reproduced above; nothing further 
 
 | Field | Value |
 |---|---|
-| `revision_after` | `NOT_CAPTURED` for *this specific attempt* — the connection failed within milliseconds of `initialize`, before any tool call could occur; a separate, later fence check (taken after both the Cursor and this VS Code attempt) read `revision: 9`, unchanged from the pre-Cursor baseline, but that reading is not attributable to this attempt in isolation. |
-| Fixture-check result | Not independently re-run immediately after this specific attempt for the same reason; the later combined check (`COMPLETE`, `mismatches: []`) covers this attempt jointly with Cursor's, as recorded in the Cursor trace. |
+| `revision_after` | `NOT_CAPTURED` for this attempt — the connection failed within milliseconds of `initialize`, before any tool call could occur, and no fence check was run afterward specifically for this attempt. (The `revision = 9` reading discussed under Pre-client state above was taken *before* this attempt, not after it — it is this tuple's pre-client baseline, not a post-attempt reading, and is not being reused here as one.) |
+| Fixture-check result | Likewise `NOT_EXECUTED` for this specific attempt, for the same reason — no re-check was run immediately after the failure. |
 
 These fields are recorded explicitly as unavailable for this specific attempt, not treated as
 inapplicable, matching the same honesty standard the Claude Code FAILED trace (I3.3) used for its own
