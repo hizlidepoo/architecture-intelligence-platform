@@ -23,10 +23,13 @@ repaired retrospectively in prose. Everything else below is retained as an accur
 observed, and the semantic protocol behavior itself was correct — but the tuple as a whole requires a
 clean re-run, starting from an unconfigured candidate worktree, with both helpers executed and recorded
 *before* any client configuration or interaction. Separately, and independently of this gap, the
-tested candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) has itself since been invalidated by an
-unrelated defect found during VS Code qualification (see
-`docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`), so the required clean re-run will
-happen against the next candidate rather than this one.
+tested candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) has itself been found to have an
+unrelated defect during VS Code qualification, recorded in currently open
+[PR #150](https://github.com/michaelegner/architecture-intelligence-platform/pull/150) (not yet
+merged as of this trace's own commit) — that PR's branch, not this one, carries
+`docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`'s invalidation notice. Once #150 merges
+and a new candidate is frozen, the required clean re-run described above will happen against that new
+candidate rather than `6461db6d...` directly.
 
 ## Tuple identity
 
@@ -252,6 +255,8 @@ observed in either of the other two client families' UX runs.
   configuration or interaction, then the fixed Appendix A.1 prompt verbatim (cycle 1, this time run
   correctly the first time), reconnect, the final helpers, and the separate Appendix A.2 UX run, all in
   that order. This did not happen against `6461db6d51ee29e9c973e62b005aa84d5d95c077` because that
-  candidate has since been independently invalidated by an unrelated VS Code transport defect (see
-  `docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`) — the required clean re-run will
-  happen against the next candidate instead, applying both corrections from the start.
+  candidate has separately been found to have an unrelated VS Code transport defect, recorded in
+  currently open [PR #150](https://github.com/michaelegner/architecture-intelligence-platform/pull/150)
+  (not yet merged as of this trace's own commit; that PR's branch carries the actual invalidation
+  notice, not this one) — once #150 merges and a new candidate is frozen, the required clean re-run
+  will happen against that new candidate instead, applying both corrections from the start.
