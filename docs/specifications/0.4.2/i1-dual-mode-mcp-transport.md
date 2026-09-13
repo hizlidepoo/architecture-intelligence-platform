@@ -271,7 +271,7 @@ If no, the pinned SDK owns normal negotiated MCP processing.
 
 ## 10. Exact Direct-Envelope Markers
 
-A request is considered direct-mode traffic when **at least one** of these AIP-specific markers is present:
+A request is considered direct-mode traffic when **at least one** of these markers is present:
 
 ```text
 HTTP header:
@@ -283,7 +283,33 @@ body:
 - params._meta.io.modelcontextprotocol/clientCapabilities
 ```
 
+**Correction (I3.3 actual-client qualification finding — see ADR 0014's "Amendment" section for the
+full narrative):** these header/body names are the pinned SDK's own (`mcp.shared.inbound`), not
+AIP-invented, and a real compliant client MAY legitimately send them for its own SDK-native purposes
+unrelated to AIP's direct envelope (observed live: Claude Code's `mcp-method: server/discover` and
+`mcp-method: subscriptions/listen` under protocol era `2026-07-28`). Presence of a marker therefore
+identifies the request as *direct-marked*, not as *AIP-authored* — §10.1 below is the resulting
+normative consequence, added by this correction.
+
 These are the direct-envelope discriminators for I1.
+
+### 10.1 Direct-marked method allowlist (added by the I3.3 correction)
+
+A direct-marked request MUST additionally name one of the methods direct mode actually implements:
+
+```text
+tools/list
+tools/call
+```
+
+Any other method name on a direct-marked request MUST be rejected with a JSON-RPC `METHOD_NOT_FOUND`
+error **before** the request reaches the pinned SDK's mounted app — never forwarded on the assumption
+that carrying a direct marker implies the method is safe to dispatch. This is a closed allowlist: a
+future direct-marked method this contract has not been extended to cover is rejected the same way,
+not assumed safe by default. (Root cause this closes: forwarding an unrecognized-but-SDK-native
+method blindly let a real client's ordinary traffic reach an SDK code path — `subscriptions/listen`'s
+long-lived-notification handling — that hangs indefinitely under AIP's stateless single-worker
+deployment, taking the whole process down for every client.)
 
 The following MUST NOT by themselves select direct mode:
 
@@ -955,6 +981,8 @@ I1 is complete only when all of the following are true:
 - [ ] `stateless_http=True` remains the default.
 - [ ] No unnecessary server-side session persistence has been introduced.
 - [ ] Exact direct-envelope markers are implemented and documented.
+- [ ] Direct-marked requests are validated against the §10.1 method allowlist before dispatch; any
+      other method is rejected with `METHOD_NOT_FOUND` and never forwarded to the mounted SDK app.
 - [ ] Every routing truth-table row has executable coverage.
 - [ ] `MCP-Protocol-Version` alone does not select direct mode.
 - [ ] Only `initialize` may be markerless.

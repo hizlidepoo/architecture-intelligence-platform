@@ -160,3 +160,54 @@ guarantees. The governing invariant, repeated throughout the `v0.4.2` spec and i
   data, and the qualified client/platform matrix, are tracked separately per the delivery split in
   `docs/specifications/0.4.2/specification.md` §44 (I1 proves the generic transport contract; I3
   proves actual-client qualification).
+
+## Amendment (v0.4.2 I3.3 actual-client qualification — direct-marker method allowlist)
+
+I3.3's real Claude Code qualification run found that this ADR's original routing decision was based
+on an incorrect premise: it treated `mcp-method`/`mcp-name` (imported from the pinned SDK's own
+`mcp.shared.inbound`, never AIP-invented) as **AIP-specific** direct-envelope markers that only AIP's
+own historical hero-demo script would ever send. In fact a real, current, fully compliant MCP client
+— Claude Code (`claude-code/2.1.270`) — sends these same header names as part of its own legitimate
+SDK-native transport handshake (`mcp-method: server/discover`, then `mcp-method: subscriptions/listen`,
+both under protocol era `2026-07-28`), for a purpose unrelated to AIP's `tools/list`/`tools/call`-only
+direct envelope.
+
+Because `ModernProtocolGuard` forwarded any direct-marked request whose method it didn't specifically
+validate (only `tools/call` got extra checks) straight to `self._app` on the assumption that a direct
+marker implied "safe to dispatch as-is", Claude Code's `subscriptions/listen` request reached an SDK
+code path that hangs indefinitely under AIP's stateless single-worker deployment. **A single,
+unauthenticated request from an ordinary, spec-compliant client pegged the process at ~100% CPU and
+made it unresponsive to every other client, including its own health check** — confirmed via a
+minimal `curl` repro requiring zero Claude Code involvement, and confirmed that `asyncio.wait_for`
+cannot preempt it (the offending code does not yield control back to the event loop). This is a
+release-blocking defect independent of client qualification, not merely "Claude Code fails to
+qualify" — full finding, reproduction, and root-cause isolation recorded in
+`docs/release-validation/v0.4.2-client-traces/claude-code.md`. It invalidated the `v0.4.2-rc.1`
+candidate frozen by I3.2 (`docs/release-validation/v0.4.2-rc.1-candidate-preparation.md`, now marked
+`INVALIDATED`), per spec §4.4 ("MCP transport implementation" is a named candidate-affecting-change
+example).
+
+**Fix** (`app/mcp/guard.py`): direct-marked dispatch is now a closed allowlist,
+`_DIRECT_MODE_METHODS = frozenset({"tools/list", "tools/call"})` — the exact set direct mode has ever
+actually implemented — checked immediately after `classify_inbound_request` accepts the request and
+before any forwarding. Any other method name, including any future real SDK-native method this guard
+has not been taught about, is rejected with a fast, deterministic `METHOD_NOT_FOUND` **before**
+`self._app` is ever called. This is a general boundary-correction, not a `subscriptions/listen`-specific
+denylist entry: `server/discover` (the other real method observed, which happened to return a
+plausible response rather than hang) is rejected the same way, on the same principle — anything not on
+the closed allowlist is untrusted by default, regardless of whether it currently happens to be benign.
+
+Regression coverage added to `tests/unit/test_mcp_discovery.py`: the exact `subscriptions/listen`
+repro terminates fast (bounded by `asyncio.wait_for`, and independently confirmed to genuinely hang
+the whole test run without the fix — not just a slow response); `server/discover` is rejected the
+same way; a header/body mismatch still takes priority over the new allowlist check (existing rung
+ordering preserved); an ordinary direct `tools/list` and a fresh negotiated `initialize` both still
+succeed immediately after a rejected unimplemented-method request (no residual event-loop damage,
+direct/negotiated classification stays distinct). Full unit (998) and integration (287) suites pass
+unmodified otherwise.
+
+This amendment does not change the routing *contract's* dual-mode shape (direct vs. negotiated
+classification is unchanged); it closes a gap in what the direct path is willing to do once a request
+is classified as direct. `docs/specifications/0.4.2/i1-dual-mode-mcp-transport.md` is corrected in
+lockstep to state the same allowlist as a normative requirement and to stop describing
+`mcp-method`/`mcp-name` as AIP-proprietary.
