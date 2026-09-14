@@ -4,6 +4,7 @@ from app.analysis.runtime import ServiceTelemetryCoverage
 from app.architecture_intelligence import service as service_module
 from app.architecture_intelligence.canonical_json import canonical_json_bytes
 from app.architecture_intelligence.contracts import (
+    ARCHITECTURE_SCHEMA_VERSION,
     LimitationCode,
     Outcome,
     Producer,
@@ -533,6 +534,18 @@ def _drift_request(**overrides) -> ArchitectureDriftRequest:
     }
     payload.update(overrides)
     return ArchitectureDriftRequest.model_validate(payload)
+
+
+def test_all_service_answers_use_shared_schema_version(monkeypatch):
+    svc = _service(monkeypatch, raises=SnapshotUnstable("boom"))
+
+    answers = [
+        svc.get_service_dependencies(_request()),
+        svc.get_architecture_drift(_drift_request()),
+        svc.get_evidence(_evidence_request()),
+    ]
+
+    assert {answer.schema_version for answer in answers} == {ARCHITECTURE_SCHEMA_VERSION}
 
 
 def _call(operation: str, *evidence_ids: str) -> dict:
