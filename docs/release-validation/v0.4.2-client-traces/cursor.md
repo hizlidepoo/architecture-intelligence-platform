@@ -3,35 +3,226 @@
 Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparation.md`](../../specifications/0.4.2/i3-client-qualification-and-release-preparation.md)
 §5 (Qualified Client Tuple Contract), §6 (Actual-Client Qualification Procedure), Appendix B.
 
-## Result: **UNVERIFIED** (procedure gap — not a semantic finding)
+## Result: **QUALIFIED**
 
-Executed by the repository owner on their own machine (Cursor has no CLI/headless automation path;
-per the I3 plan, Cursor and VS Code qualification is operator-run, not driven by this agent). Evidence
-tier for this trace is **client UI evidence** (spec §6.13's own list of acceptable sources includes
-this explicitly) — chat transcripts and command output relayed by the operator in real time, not a
-passive network capture or session-file inspection as was possible for Codex CLI/Claude Code, which
-this agent drove directly.
+This tuple's first attempt (against `6461db6d51ee29e9c973e62b005aa84d5d95c077`) was `UNVERIFIED` for a
+pure procedure gap — the mandatory pre-client baseline was never captured — not a semantic finding;
+that record is preserved unedited below under "Historical record." Both the missing-baseline gap and
+the classified `CLIENT_CONTROL_FAILURE` cycle from that attempt were corrected in this run: the
+pre-client `check_fixture_state.py`/`read_revision_fence.py` baseline was captured *before* Cursor was
+configured or touched AIP, and the fixed Appendix A.1 prompt was pasted verbatim from the start (no
+paraphrase cycle this time).
 
-**This run does not satisfy the mandatory §6.2/§6.3/§6.12 baseline-and-fence contract and therefore
-cannot be recorded as `QUALIFIED`, per PR #149 review.** `check_fixture_state.py`/`read_revision_fence.py`
-were not executed *before* Cursor was configured or interacted with AIP, so there is no tuple-local
-`revision_before`/pre-client fixture-state proof — only a post-run reading, taken after Cursor had
-already made every call in this trace. §6.12's zero-write proof is specifically about detecting a
-write *this run* might have made; a baseline borrowed from other clean builds' post-seed readings
-cannot stand in for that, however consistent those other readings have been. This gap cannot be
-repaired retrospectively in prose. Everything else below is retained as an accurate record of what was
-observed, and the semantic protocol behavior itself was correct — but the tuple as a whole requires a
-clean re-run, starting from an unconfigured candidate worktree, with both helpers executed and recorded
-*before* any client configuration or interaction. Separately, and independently of this gap, the
-tested candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) has itself been found to have an
-unrelated defect during VS Code qualification, recorded in currently open
-[PR #150](https://github.com/michaelegner/architecture-intelligence-platform/pull/150) (not yet
-merged as of this trace's own commit) — that PR's branch, not this one, carries
-`docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`'s invalidation notice. Once #150 merges
-and a new candidate is frozen, the required clean re-run described above will happen against that new
-candidate rather than `6461db6d...` directly.
+## Qualification against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
 
-## Tuple identity
+### Tuple identity
+
+| Field | Value |
+|---|---|
+| Client family | Cursor |
+| Client product | Cursor |
+| Client version | `3.20.17` |
+| Extension/plugin | N/A — built in |
+| OS | Windows_NT x64 `10.0.26200` (host), WSL2 (Linux distro) for AIP and the working directory |
+| Execution mode | WSL — Cursor (Windows desktop app, VS Code Extension API `1.128.0`, Electron `42.10.0`) connected to the WSL2 distro, working directory `/tmp/aip-i34` inside WSL |
+| Client location | Windows host process, remote-connected into the same WSL2 VM as AIP |
+| AIP location | Docker container inside WSL2, published port `8000` |
+| Network topology | Cursor (Windows, WSL-remote-connected) → `localhost:8000` (WSL2 published port) → `architecture-intelligence` container |
+| Configuration mechanism | `.cursor/mcp.json` in the worktree root: `{"mcpServers": {"aip": {"url": "http://localhost:8000/mcp"}}}`, per `examples/mcp-clients/cursor.md` |
+| Transport | Streamable HTTP |
+| Approval mode | Automatic — operator confirmed all tool calls across all three runs (drift qualification, reconnect, UX) executed without any approve/allow prompt |
+| Candidate SHA | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` |
+| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, confirmed by asking the agent to quote it directly from the `get_architecture_drift` response it had just used (not inferred from the checkout, image, or another client's session) |
+| Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
+| Observed initialization/protocol version | Not independently captured (no network capture in this evidence tier); tool discovery and correct three-tool behavior confirmed via Cursor's own MCP settings panel and every tool call succeeding |
+| Session IDs issued / used / reuse | Not independently captured for the same reason; consistent with every other client family's evidence that AIP's negotiated mode issues none |
+| Qualification date | 2026-09-14 |
+
+Configuration re-verification is unchanged from the prior attempt (see Historical record below —
+`.cursor/mcp.json`'s shape was reverified against Cursor's raw official docs source on 2026-09-13, no
+finding) and is not repeated in full here.
+
+### Pre-client state (spec §6.2/§6.3) — captured directly, before any client interaction
+
+`examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
+`50862a352626ea38d2fbb36f2ff0ecfc667266d0`, from a clean `git worktree --detach` at that exact SHA.
+Unlike the first attempt, **this agent had direct shell access to the same host running the fixture
+this time** (the operator and this agent share the same machine) and ran
+`check_fixture_state.py`/`read_revision_fence.py` itself, immediately after `--serve` completed and
+*before* `.cursor/mcp.json` was even created: `fixture = COMPLETE`, `mismatches: []`,
+`snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
+`revision_before = 9`. This closes the exact gap the prior attempt's `UNVERIFIED` result was about.
+
+### Attempt record (spec §6.5/§6.6)
+
+| Cycle | Attempt | Classification | Outcome |
+|---|---|---|---|
+| 1 | 1 | — | Full success on the first attempt: the fixed Appendix A.1 prompt was pasted verbatim into a fresh chat from the start (the paraphrase-then-correct cycle from the prior attempt was not repeated). Called `get_architecture_drift`, then `get_evidence` per finding, using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications exactly. |
+
+One valid client attempt used, well within the LLM-mediated budget of 2 (spec §6.5). No
+infrastructure-invalidated runs or classified failures occurred at any point in this attempt.
+
+### Required successful protocol workflow (spec §6.8)
+
+Evidence source for this section is the operator's relayed chat transcripts (client UI evidence, spec
+§6.13); the pre-/post-client fixture and revision checks were run directly by this agent (see above and
+below), not relayed.
+
+| # | Requirement | Evidence |
+|---|---|---|
+| 1 | Initialization/negotiation | Cursor's MCP settings panel showed `aip` connected before the run began. |
+| 2 | Tool discovery | Same panel, listing the server's tools. |
+| 3 | Exactly three AIP tools discovered | `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — no others. |
+| 4 | `get_architecture_drift` | Drift called for `service:order-service`, `demo`, `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`. |
+| 5 | Deterministic structured drift result | `queue:unused-q` → `NOT_OBSERVED_IN_WINDOW` (coverage `SUFFICIENT`, `DIRECT_TARGET_FALLBACK`, `UNRESOLVED_IDENTITY` limitation) and `service:legacypricingservice` (via `GET /pricing/{sku}`) → `OBSERVED_ONLY` — the exact spec §6.9 expected result. |
+| 6 | `get_evidence` using returned `evidence_refs` | `evidence:asyncapi:order-service` (Finding 1) resolved with `missing_evidence_refs: []`; `evidence:otel:demo:2026-08-26:bfae54276215` + its `resolution_evidence_refs` entry `evidence:otel:demo:2026-08-26:29d4976aeaf9` (Finding 2) resolved together, `missing_evidence_refs: []` — both `outcome: ANSWERED`. |
+| 7 | Same snapshot used | All calls carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
+| 8 | Disconnect/stop | Operator reloaded the Cursor window ("Developer: Reload Window"), closing the prior chat's MCP session. |
+| 9 | Reconnect/reinitialize | A fresh chat, after the reload, successfully discovered and called AIP's tools again from scratch. |
+| 10 | One read-only tool works after reconnect | `get_service_dependencies` for `service:order-service` (same window) returned `outcome: PARTIAL` with 4 dependency claims (`product-service` `CONFIRMED`, `payment-service` `CONFIRMED`, `legacypricingservice` `OBSERVED_ONLY`, `unused-q` `NOT_OBSERVED_IN_WINDOW`), same snapshot. |
+
+### Sanitization statement (spec §6.15)
+
+Same statement as the prior attempt: all evidence in this section is text relayed directly by the
+repository owner, describing only AIP architecture-fact content — no authorization headers, tokens,
+cookies, account identifiers, email addresses, personal identifiers, raw system prompts, or unrelated
+content of any kind. AIP's local demo endpoint requires no credential.
+
+### Post-client state (spec §6.12/§6.15) — captured directly, after the entire tuple including the UX run
+
+| Field | Value |
+|---|---|
+| `revision_after` | `9` — equal to `revision_before` (`R = 9`), measured directly by this agent via `read_revision_fence.py --json`, run *after* the drift/reconnect calls **and** after the separate Appendix A.2 UX run below — this tuple's zero-write evidence covers the entire session end to end. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching every snapshot ID quoted throughout the run. |
+
+This closes the second half of the gap the prior attempt's `UNVERIFIED` result was about: both
+`revision_before` and `revision_after` are now genuine tuple-local measurements taken directly by this
+agent, not relayed operator readings or a baseline borrowed from another execution.
+
+### Mandatory separate UX observation (spec §7.2, Appendix A.2)
+
+Run in a fresh Cursor chat, separate from the protocol-qualification and reconnect runs above.
+
+**Prompt used:** the fixed Appendix A.2 prompt, verbatim.
+
+**Where visible:**
+
+| | |
+|---|---|
+| Model/provider | Not captured — Cursor's chat UI did not surface which underlying model served the request |
+| Agent mode | Cursor's default Agent-mode chat |
+| Tool approval mode | Automatic — no approval prompt requested or reached |
+
+**§7.2 result table** (`YES` / `NO` / `PARTIAL` / `NOT_OBSERVED`):
+
+| Observation | Result |
+|---|---|
+| selected AIP | `YES` |
+| called `get_architecture_drift` | `YES` |
+| found `LegacyPricingService` | `YES` |
+| preserved `OBSERVED_ONLY` | `YES` |
+| found `unused-q` | `YES` |
+| preserved `NOT_OBSERVED_IN_WINDOW` | `YES` |
+| called `get_evidence` | `YES` |
+| preserved the same snapshot | `YES` |
+| distinguished evidence from inference | `YES` |
+| avoided unused/dead/obsolete overclaim | `YES` |
+
+**Unedited observed outcome** (the agent's response, as relayed verbatim by the operator — sanitization
+statement above):
+
+> AIP returned two drift claims for service:order-service in demo, window
+> 2026-08-26T00:00:00Z–2026-08-27T00:00:00Z. Tool outcome was PARTIAL. Evidence below was resolved with
+> get_evidence on the same snapshot:
+>
+> aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8
+>
+> A structured copy of the same AIP result is in OrderService drift (openable beside the chat).
+>
+> **Finding 1 — SENDS queue:unused-q**
+> Claim: aip:claim:v1:ca0dd73ba391552edd6d2cc06cddd919a8af97f362cdb47392e78325219fd612
+> Predicate: DIRECT_DEPENDENCY
+> Delivery: ASYNC_MESSAGE / SENDS via queue:unused-q
+> Object: queue:unused-q
+> Destination resolution: DIRECT_TARGET_FALLBACK
+>
+> Qualification: NOT_OBSERVED_IN_WINDOW with coverage SUFFICIENT. AIP is classifying a declared send
+> that was not observed in this window, and it is treating observation coverage as sufficient for that
+> classification (not as "we did not have enough telemetry to judge").
+>
+> Evidence (same snapshot):
+> - `evidence:asyncapi:order-service` — DECLARED, source type ASYNCAPI, locator
+>   `examples/order-service/asyncapi.yaml`, source_revision null, no observation block.
+> - Among the relations that record supports is `SENDS service:order-service → queue:unused-q`.
+> - Claim `resolution_evidence_refs` is empty.
+>
+> Limitation AIP attached to this claim: `UNRESOLVED_IDENTITY` — "queue:unused-q has no single
+> evidenced consumer service; retained as the direct queue target rather than guessed." That is why
+> the object is the queue, not a consumer service.
+>
+> What AIP established: on this snapshot, AsyncAPI declares that OrderService sends to unused-q; that
+> declared dependency is a drift finding because it was not observed in the demo window under
+> sufficient coverage; AIP did not evidence a single consumer, so it kept the queue as the target.
+>
+> Not established: that the queue has no consumers anywhere; that traffic existed or did not exist
+> outside this window; a reason the send was unobserved; anything about payment-q (the same AsyncAPI
+> record also supports other relations; those are not this claim).
+>
+> **Finding 2 — CALLS service:legacypricingservice**
+> Claim: aip:claim:v1:8c43c7b5ba7783da9b188afd0e28a72d0570d3a48a9772c5911ce8469e89bbd0
+> Predicate: DIRECT_DEPENDENCY
+> Delivery: SYNC_HTTP / CALLS via operation:service:legacypricingservice:GET:/pricing/{sku}
+> Object: service:legacypricingservice (LegacyPricingService)
+> Destination resolution: RESOLVED_SERVICE
+> Coverage: null (AIP did not return a coverage judgment on this claim)
+>
+> Qualification: OBSERVED_ONLY. AIP attached observed evidence for the call and did not attach
+> declared evidence on the claim.
+>
+> Evidence (same snapshot):
+> - Claim evidence `evidence:otel:demo:2026-08-26:bfae54276215` — OBSERVED, OPENTELEMETRY, locator
+>   opentelemetry. Observation: environment demo, bucket 2026-08-26T00:00:00Z–2026-08-27T00:00:00Z,
+>   first_seen and last_seen both 2026-08-26T12:00:00.044222Z, observation_count 1, correlation_mode
+>   CLIENT_SERVER, service_version null. Supports CALLS service:order-service →
+>   operation:service:legacypricingservice:GET:/pricing/{sku}.
+> - Resolution evidence `evidence:otel:demo:2026-08-26:29d4976aeaf9` — same observation envelope
+>   (demo, same bucket, same timestamps, count 1, CLIENT_SERVER). Supports PROVIDES
+>   service:legacypricingservice → that same operation.
+>
+> What AIP established: in this snapshot and window, OpenTelemetry evidenced one client-server
+> observation of OrderService calling GET /pricing/{sku}, and one client-server observation that
+> LegacyPricingService provides that operation; AIP used the PROVIDES record to resolve the CALLS
+> target to service:legacypricingservice; the dependency is classified as observed only.
+>
+> Not established: a declared CALLS or PROVIDES for this operation; why it is undeclared; traffic
+> beyond observation_count 1; ownership, authorization, or whether the call is incorrect.
+
+This is observational product evidence only, not a semantic release gate (spec §7.2).
+
+### Disposition
+
+- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`.
+- Both gaps from the prior `UNVERIFIED` attempt are closed: the pre-client baseline was captured
+  directly by this agent before any client interaction, and the post-client fence was captured
+  directly after the entire tuple including the UX run — a genuine tuple-local `R' = R` proof, not a
+  borrowed or partial one.
+- One clean valid attempt, no `CLIENT_CONTROL_FAILURE` cycle this time — the fixed Appendix A.1
+  prompt was pasted verbatim from the start.
+- `producer.build_revision` confirmed directly from Cursor's own response (asked as a follow-up
+  question, not inferred from another client's session), per the same standard applied to the
+  Claude Code reconfirmation after PR #152 review.
+- Evidence tier for the protocol/UX content itself remains client UI evidence (spec §6.13) — no
+  passive network capture or session-file inspection was available in this environment, same as the
+  prior attempt.
+
+---
+
+## Historical record: `UNVERIFIED` attempt against invalidated candidate `6461db6d51ee29e9c973e62b005aa84d5d95c077`
+
+Preserved unedited below, per spec §6.5's requirement that an earlier valid-client result — failure or
+procedural incompleteness — is not hidden by only reporting the latest success.
+
+### Tuple identity
 
 | Field | Value |
 |---|---|
@@ -53,7 +244,7 @@ candidate rather than `6461db6d...` directly.
 | Session IDs issued / used / reuse | Not independently captured for the same reason; AIP's negotiated mode issues no session IDs in any of the automated/passive-capture evidence gathered for the other three client families, and nothing in this run's behavior (three independent chat contexts all working statelessly) is inconsistent with that |
 | Qualification date | 2026-09-13 |
 
-## Approval behavior (spec §6.7)
+### Approval behavior (spec §6.7)
 
 | Field | Value |
 |---|---|
@@ -62,7 +253,7 @@ candidate rather than `6461db6d...` directly.
 | Manual approval required | No |
 | Persistent allow enabled | Not applicable / not distinguishable from "no prompt needed by default" in this evidence tier — the operator did not need to enable or interact with any allow-list setting to get this automatic behavior |
 
-## Configuration re-verification (spec §6.4)
+### Configuration re-verification (spec §6.4)
 
 | | |
 |---|---|
@@ -70,7 +261,7 @@ candidate rather than `6461db6d...` directly.
 | Verification date | 2026-09-13 (this run) |
 | Result | PASS — confirmed by fetching the raw page source directly (not a summarization tool, per the lesson from this same qualification pass's Codex CLI trace) and finding the exact `{"mcpServers": {"server-name": {"url": "http://localhost:3000/mcp", "headers": {...}}}}` shape and the `.cursor/mcp.json` file path, both matching `examples/mcp-clients/cursor.md` exactly (AIP's config omits `headers` since no auth is required). No finding. |
 
-## Pre-client state (spec §6.2/§6.3) — **NOT CAPTURED, blocking**
+### Pre-client state (spec §6.2/§6.3) — **NOT CAPTURED, blocking**
 
 `examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
 `6461db6d51ee29e9c973e62b005aa84d5d95c077`, run by the operator from a clean `git worktree --detach`
@@ -85,7 +276,7 @@ before any client interaction.** Per PR #149 review, this is a blocking gap, not
 `R' = R` comparison — it cannot be satisfied by a baseline borrowed from a different execution, however
 consistent that other execution's own readings have been. See Result above and Post-client state below.
 
-## Attempt record (spec §6.5/§6.6)
+### Attempt record (spec §6.5/§6.6)
 
 | Cycle | Attempt | Classification | Outcome |
 |---|---|---|---|
@@ -100,7 +291,7 @@ correction stands regardless of the separate, blocking pre-client-baseline gap a
 final result is `UNVERIFIED` because of the missing baseline, not because of this cycle-1 failure,
 which is itself now correctly recorded rather than hidden.
 
-## Required successful protocol workflow (spec §6.8)
+### Required successful protocol workflow (spec §6.8)
 
 Evidence source for this section is the operator's relayed chat transcripts (client UI evidence, spec
 §6.13) rather than a passive network capture.
@@ -118,7 +309,7 @@ Evidence source for this section is the operator's relayed chat transcripts (cli
 | 9 | Reconnect/reinitialize | A fresh chat, after the reload, successfully discovered and called AIP's tools again from scratch. |
 | 10 | One read-only tool works after reconnect | `get_service_dependencies` for `service:order-service` (same window) returned `outcome: PARTIAL` with the same 4 dependency claims as the other two clients' equivalent calls (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`), same snapshot. |
 
-## Sanitization statement (spec §6.15)
+### Sanitization statement (spec §6.15)
 
 All evidence in this trace is text relayed directly by the repository owner from their own Cursor
 session, describing only AIP architecture-fact content (service/queue/evidence identifiers, tool
@@ -127,7 +318,7 @@ personal identifiers, raw system prompts, or unrelated content of any kind appea
 local demo endpoint requires no credential, so no header/token redaction was needed. No raw capture
 file exists for this trace (none was produced in this evidence tier).
 
-## Post-client state (spec §6.12/§6.15) — **incomplete: no tuple-local baseline to compare against**
+### Post-client state (spec §6.12/§6.15) — **incomplete: no tuple-local baseline to compare against**
 
 | Field | Value |
 |---|---|
@@ -143,7 +334,7 @@ cannot be substituted for it. `revision_after = 9` and the clean fixture classif
 accurate observations, but they do not by themselves prove this specific run wrote nothing, and this
 record no longer claims otherwise.
 
-## Mandatory separate UX observation (spec §7.2, Appendix A.2)
+### Mandatory separate UX observation (spec §7.2, Appendix A.2)
 
 Run in a fresh Cursor chat, separate from the protocol-qualification and reconnect runs above.
 
@@ -235,7 +426,7 @@ UX-quality product evidence (not a release gate itself): Cursor rendered the str
 data in a side "canvas" panel alongside the chat response, a client-specific presentation choice not
 observed in either of the other two client families' UX runs.
 
-## Disposition
+### Disposition
 
 - `UNVERIFIED` against `RELEASE_CANDIDATE_SHA = 6461db6d51ee29e9c973e62b005aa84d5d95c077` (PR #149
   review) — not `QUALIFIED`, because the mandatory tuple-local pre-client fixture/revision baseline
