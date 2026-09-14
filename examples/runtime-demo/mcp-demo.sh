@@ -93,6 +93,10 @@ validate_prerequisites() {
     exit 1
   }
   [[ -f "${REPO_ROOT}/.env" ]] || { echo "error: no .env at ${REPO_ROOT} - run: cp .env.example .env" >&2; exit 1; }
+  if [[ "${AIP_DEMO_REUSE_IMAGES:-0}" == "1" && -n "${BUILD_REVISION}" ]]; then
+    echo "error: AIP_DEMO_REUSE_IMAGES=1 cannot be combined with BUILD_REVISION; image reuse would skip the pinned build" >&2
+    exit 1
+  fi
   if [[ -n "${BUILD_REVISION}" && ! "${BUILD_REVISION}" =~ ${_BUILD_REVISION_PATTERN} ]]; then
     echo "error: BUILD_REVISION must be a full 40-character lowercase hex commit SHA, got: ${BUILD_REVISION}" >&2
     exit 1

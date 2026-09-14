@@ -270,6 +270,19 @@ class TestPrerequisiteFailures:
         assert result.returncode != 0
         assert "BUILD_REVISION" in result.stderr
 
+    def test_reuse_images_rejects_pinned_build_revision(self, tmp_path):
+        # Image reuse intentionally skips the build, so it must not be allowed to claim a pinned
+        # BUILD_REVISION that the reused container cannot reflect.
+        _ensure_env_file()
+        result = _run_script(
+            "--serve",
+            timeout=15,
+            env=_env(AIP_DEMO_REUSE_IMAGES="1", BUILD_REVISION="a" * 40),
+        )
+        assert result.returncode != 0
+        assert "AIP_DEMO_REUSE_IMAGES" in result.stderr
+        assert "BUILD_REVISION" in result.stderr
+
     def test_release_gating_run_without_build_revision_exits_nonzero(self, tmp_path):
         # spec §6.1: RELEASE_CANDIDATE_SHA present but BUILD_REVISION missing must fail before
         # serving - the canonical release-gating invocation always sets both together.
