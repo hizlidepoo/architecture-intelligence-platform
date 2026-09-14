@@ -14,7 +14,9 @@ It reconciles declared API contracts with observed runtime behavior so an agent 
 - declared relationships not observed in the selected runtime window;
 - facts AIP cannot safely establish.
 
-Every answer is snapshot-bound and traceable to evidence. The agent-facing tools are read-only.
+Every answer is snapshot-bound and traceable to evidence. The agent-facing tools are read-only,
+qualified end to end against four real coding-agent clients — see the
+[compatibility matrix](docs/release-validation/v0.4.2-client-qualification.md).
 
 **[Run the 5-Minute Demo](#see-it-in-five-minutes) · [MCP Tools](#mcp-tools) · [How It Works](#how-aip-works)**
 
@@ -218,8 +220,9 @@ evidence references at the same snapshot without creating new architecture claim
 
 ## MCP Tools
 
-AIP exposes the validated architecture model at `/mcp` (MCP protocol `2026-07-28`) as exactly
-three **read-only** tools:
+AIP exposes the validated architecture model at `/mcp` — via either the direct `2026-07-28`
+envelope or standard negotiated MCP client initialization (see [Boundaries](#boundaries)) — as
+exactly three **read-only** tools:
 
 | Tool | Answers |
 |---|---|
@@ -474,12 +477,12 @@ public issues — see [`SECURITY.md`](SECURITY.md). This project follows the
 ## Project Status
 
 Latest release:
-[`v0.4.1`](https://github.com/michaelegner/architecture-intelligence-platform/releases/tag/v0.4.1)
-— **Semantic Hardening for Broader Discovery**.
+[`v0.4.2`](https://github.com/michaelegner/architecture-intelligence-platform/releases/tag/v0.4.2)
+— **MCP Client Interoperability**.
 
 Pre-1.0: the REST/MCP surface, Graph Schema, Canonical Model, Adapter SPI and configuration format
 may still change on a minor version bump. Every release ships a published-artifact verification —
-[`docs/release-validation/v0.4.1-post-release-verification.md`](docs/release-validation/v0.4.1-post-release-verification.md)
+[`docs/release-validation/v0.4.2-post-release-verification.md`](docs/release-validation/v0.4.2-post-release-verification.md)
 is the most recent. See [`CHANGELOG.md`](CHANGELOG.md) for what shipped in each release and
 [`ROADMAP.md`](ROADMAP.md) for what's next — v0.5 (Broader Architecture Discovery).
 

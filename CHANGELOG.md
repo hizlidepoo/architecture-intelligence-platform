@@ -9,6 +9,34 @@ aren't yet guaranteed stable pre-1.0.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-14
+
+### v0.4.2 — MCP Client Interoperability
+
+Makes the existing read-only Architecture Intelligence MCP surface directly consumable by qualified
+coding-agent clients, without changing architecture semantics. Adds a negotiated MCP transport mode
+alongside the existing direct-envelope mode; adds no discovery source, Canonical Model family, or
+MCP tool.
+
+- A negotiated MCP transport mode (standard `initialize`/session handshake), dispatching to the same
+  three read-only tools with byte-identical `ArchitectureAnswer` semantics as the existing
+  direct-envelope mode (see [`docs/mcp.md`](docs/mcp.md) and
+  [ADR 0014](docs/adr/0014-negotiated-mcp-client-interoperability.md)).
+- Four coding-agent client families qualified end to end against a real, running server — not only a
+  test suite: Codex CLI `0.154.0`, Claude Code CLI `2.1.270`, Cursor `3.20.17`, VS Code `1.137.0` +
+  GitHub Copilot Chat. Cross-client semantic mismatches = 0, evidence-meaning mismatches = 0 — see
+  the [qualified client/platform matrix](docs/release-validation/v0.4.2-client-qualification.md).
+- Actual-client qualification found and fixed two real interoperability defects the test suite alone
+  had not caught: a negotiated-mode routing gap that could hang the server on an unbounded
+  direct-marked method, and an over-strict rejection of a negotiated follow-up missing the
+  `MCP-Protocol-Version` header — both fixed and reconfirmed before candidate freeze.
+- The shipped `v0.4` public contract is unchanged throughout: exactly three read-only MCP tools,
+  `schema_version = "0.4"`, the `ArchitectureAnswer<T>` envelope family, zero graph writes through
+  any tool.
+
+See [`docs/specifications/0.4.2/`](docs/specifications/0.4.2/) for the full design history and
+completion records.
+
 ## [0.4.1] - 2026-09-10
 
 ### v0.4.1 — Semantic Hardening for Broader Discovery
