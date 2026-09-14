@@ -595,7 +595,7 @@ class ArchitectureAnswer[T: BaseModel](BaseModel):
         frozen=True, extra="forbid", json_schema_extra=_architecture_answer_schema_extra
     )
 
-    schema_version: Literal["0.4"]
+    schema_version: Literal[ARCHITECTURE_ANSWER_SCHEMA_VERSION]
     producer: Producer
     tool: Literal["get_service_dependencies", "get_evidence", "get_architecture_drift"]
     outcome: Outcome
