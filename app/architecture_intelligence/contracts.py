@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -590,12 +590,16 @@ _TOOLS_REQUIRING_OBSERVATION_CONTEXT = frozenset(
 )
 
 
+ArchitectureSchemaVersion = Literal["0.4"]
+ARCHITECTURE_SCHEMA_VERSION = get_args(ArchitectureSchemaVersion)[0]
+
+
 class ArchitectureAnswer[T: BaseModel](BaseModel):
     model_config = ConfigDict(
         frozen=True, extra="forbid", json_schema_extra=_architecture_answer_schema_extra
     )
 
-    schema_version: Literal["0.4"]
+    schema_version: ArchitectureSchemaVersion
     producer: Producer
     tool: Literal["get_service_dependencies", "get_evidence", "get_architecture_drift"]
     outcome: Outcome
