@@ -8,8 +8,9 @@ Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparatio
 This tuple's history in one line: **FAILED** (`71e2d8b...`, transport hang — see Historical record
 further down) → **QUALIFIED** (`6461db6d...`, now itself invalidated for an unrelated VS Code defect —
 see the next Historical record) → **QUALIFIED** (current `RELEASE_CANDIDATE_SHA`, recorded first
-below). Per spec §6.5, no earlier valid-client result — failure or success — is hidden by only
-reporting the latest one; both prior records are preserved unedited further down.
+below, corrected twice — see that section). Per spec §6.5, no earlier valid-client result — failure or
+success — is hidden by only reporting the latest one; both prior records are preserved unedited further
+down.
 
 ## Reconfirmation against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
 
@@ -26,7 +27,17 @@ and incorrectly relied on Codex CLI's cross-server confirmation as a stand-in �
 pointed out that server identity is not the same as proof of what Claude Code itself received, and
 spec §6.8/§6.13 require the latter. The tuple was re-run in full (fresh fixture, fresh pre-client
 baseline) with `producer.build_revision` extracted directly from Claude Code's own session transcripts
-*before* their deletion; the evidence below reflects that corrected run.
+*before* their deletion.
+
+**Second correction (self-identified while building the I3.5 cross-client matrix):** the corrected
+run above still had the same defect PR #153 review later caught in Cursor's trace: its `get_evidence`
+call for Finding 2 combined the claim's own `evidence_refs` with a separate `resolution_evidence_refs`
+entry into one call, deviating from the fixed Appendix A.1 prompt's "using exactly the evidence_refs"
+instruction. This predates the Cursor review that established the strict per-finding reading and was
+never independently re-checked against it. For consistency with the standard already applied to
+Cursor and VS Code, that run is reclassified below as a failed valid attempt
+(`MODEL_TOOL_SELECTION_FAILURE`, cycle 1), and a fresh cycle 2 was run using only each finding's own
+`evidence_refs`, confirmed directly in the session transcript.
 
 ### Tuple identity
 
@@ -44,11 +55,11 @@ baseline) with `producer.build_revision` extracted directly from Claude Code's o
 | Configuration mechanism | `claude mcp add --transport http --scope local aip http://localhost:8000/mcp` (per `examples/mcp-clients/claude-code.md`), scope `local` |
 | Transport | Streamable HTTP |
 | Candidate SHA | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` |
-| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, extracted directly from Claude Code's own session transcript (`tool_result` content) for every one of the 5 tool calls across both protocol-qualification processes, before the transcripts were deleted |
+| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, extracted directly from Claude Code's own session transcript (`tool_result` content) for every one of the 4 tool calls in cycle 2's qualifying attempt and reconnect, before the transcripts were deleted |
 | Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
-| Observed initialization/protocol version | `2025-11-25` (negotiated mode, confirmed by passive capture) |
-| Session IDs issued / used / reuse | None observed (no `mcp-session-id` header in any client process's traffic) |
-| Qualification date | 2026-09-13 |
+| Observed initialization/protocol version | Not independently captured for cycle 2 (no passive network capture was available in this environment for this redo — `tcpdump` requires elevated privileges not available here); the session transcript directly confirms tool discovery and correct three-tool behavior via successful `mcp__aip__*` tool calls in every process |
+| Session IDs issued / used / reuse | Not independently captured for the same reason; consistent with every other client family's evidence that AIP's negotiated mode issues none |
+| Qualification date | 2026-09-14 |
 
 Approval behavior, configuration re-verification, and the `--allowedTools` methodology are unchanged
 from the prior qualification (see Historical record below) and are not repeated in full here: same
@@ -61,74 +72,79 @@ persisted-permission file created.
 `50862a352626ea38d2fbb36f2ff0ecfc667266d0`, captured before `claude mcp add`/`get` or any client
 interaction. Fixture checker `COMPLETE`, `mismatches: []`,
 `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
-revision fence `R = 9`.
+revision fence `R = 9`. This baseline covers both cycle 1 (below, reclassified) and cycle 2 — both ran
+against the same continuous fixture instance, no teardown in between.
 
 ### Attempt record (spec §6.5/§6.6)
 
 | Cycle | Attempt | Classification | Outcome |
 |---|---|---|---|
-| 1 | 1 | — | Full success on the first attempt: `claude mcp add` (config write, no network), then `claude mcp get aip` (the exact connectivity health-check that hung the pre-I3.3-fix candidate) completed instantly with `✔ Connected`; `claude -p` (Appendix A.1 fixed prompt) called `get_architecture_drift` then `get_evidence` twice, using evidence_refs taken from the drift response, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
+| 1 | 1 | `MODEL_TOOL_SELECTION_FAILURE` (self-identified, second correction above) | `claude mcp add`/`get` succeeded (`✔ Connected`); `claude -p` (Appendix A.1 fixed prompt) called `get_architecture_drift` correctly, then for Finding 2 issued a `get_evidence` call combining the claim's own `evidence_refs` (`evidence:otel:demo:2026-08-26:bfae54276215`) with its `resolution_evidence_refs` entry (`evidence:otel:demo:2026-08-26:29d4976aeaf9`) — deviating from the fixed prompt's "using exactly the evidence_refs" instruction. Prerequisites were healthy and the model otherwise executed correctly, so this is a valid attempt that failed on model tool selection, not infrastructure or client control. |
+| 2 | 1 | — | Fresh `claude -p` process, same fixed Appendix A.1 prompt. Called `get_architecture_drift`, then issued two separate `get_evidence` calls, each using only that finding's own `evidence_refs` (Finding 1: `["evidence:asyncapi:order-service"]`; Finding 2: `["evidence:otel:demo:2026-08-26:bfae54276215"]`, no `resolution_evidence_refs`) — confirmed directly in the session transcript. The final report even explains why `resolution_evidence_refs` was not separately fetched: "outside the... scope you specified, which names the claim's `evidence_refs` field." `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed in the transcript for the drift call and both `get_evidence` calls. |
 
-One valid client attempt used, well within the LLM-mediated budget of 2 (spec §6.5). No
-infrastructure-invalidated runs or classified failures occurred at any point in this reconfirmation.
+Per §6.6, one `MODEL_TOOL_SELECTION_FAILURE` on the LLM-mediated path permits exactly one further valid
+attempt, which cycle 2 is. Two valid client attempts total, within the per-cycle budget of 2 (spec
+§6.5); no infrastructure-invalidated runs occurred.
 
 ### Required successful protocol workflow (spec §6.8)
 
-Evidence combines each `claude -p --output-format json` run's own session transcript (read directly
-for both tool-call inputs and outputs, including `producer.build_revision`, before deletion) with a
-passive `tcpdump` capture of the real `POST /mcp` traffic (observational only, per spec §6.14), begun
-before `claude mcp add`/`get` and continued through both `claude -p` runs.
+This table describes cycle 2 (the qualifying attempt) and its own reconnect. Evidence is cycle 2's own
+`claude -p --output-format json` session transcript, read directly for both tool-call inputs and
+outputs (including `producer.build_revision`) before deletion — no passive network capture was used
+for this redo (see the Tuple identity note above), unlike the rest of this trace file.
 
 | # | Requirement | Evidence |
 |---|---|---|
-| 1 | Initialization/negotiation | Passive capture, present in every one of the 3 client processes captured (`claude mcp get`, `claude -p` run 1, `claude -p` run 2): `POST /mcp` `initialize` (`protocolVersion: "2025-11-25"`) → `200`, then `notifications/initialized` → `202`. |
-| 2 | Tool discovery | Passive capture: `POST /mcp` `tools/list` → `200` in every process, immediately after `initialize`. |
-| 3 | Exactly three AIP tools discovered | The `tools/list` response body names exactly `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — no others; also confirmed via each session transcript's `ToolSearch` tool-reference results. |
-| 4 | `get_architecture_drift` | Session transcript (run 1): `tool_use` `mcp__aip__get_architecture_drift`, request `{"service_id":"service:order-service","observation_context":{"environment":"demo","window_start":"2026-08-26T00:00:00Z","window_end":"2026-08-27T00:00:00Z"}}`; `tool_result` carries `"producer":{"name":"architecture-intelligence-platform","version":"0.4.2","build_revision":"50862a352626ea38d2fbb36f2ff0ecfc667266d0"}`. |
+| 1 | Initialization/negotiation | Session transcript: successful `mcp__aip__get_architecture_drift` tool call implies a completed `initialize`/`notifications/initialized` handshake (Claude Code's MCP client does not expose the raw handshake in the transcript directly; inferred from successful tool dispatch, not directly observed at the wire level for this redo). |
+| 2 | Tool discovery | Session transcript: a `ToolSearch` call resolving `mcp__aip__get_architecture_drift,mcp__aip__get_evidence,mcp__aip__get_service_dependencies` succeeded, confirming all three tools were discovered. |
+| 3 | Exactly three AIP tools discovered | The three tool names above are the only `mcp__aip__*` tools referenced or called anywhere in the transcript. |
+| 4 | `get_architecture_drift` | `tool_use` `mcp__aip__get_architecture_drift`, request `{"service_id":"service:order-service","observation_context":{"environment":"demo","window_start":"2026-08-26T00:00:00Z","window_end":"2026-08-27T00:00:00Z"}}`; `tool_result` carries `"producer":{"name":"architecture-intelligence-platform","version":"0.4.2","build_revision":"50862a352626ea38d2fbb36f2ff0ecfc667266d0"}`. |
 | 5 | Deterministic structured drift result | Response `outcome: PARTIAL`; claims resolve to `queue:unused-q` → `NOT_OBSERVED_IN_WINDOW` and `service:legacypricingservice` (via `GET /pricing/{sku}`) → `OBSERVED_ONLY` — the exact spec §6.9 expected result. |
-| 6 | `get_evidence` using returned `evidence_refs` | Two `tool_use` calls, `mcp__aip__get_evidence`: first `evidence_refs: ["evidence:asyncapi:order-service"]` (Finding 1's own evidence); second `evidence_refs: ["evidence:otel:demo:2026-08-26:bfae54276215", "evidence:otel:demo:2026-08-26:29d4976aeaf9"]` (Finding 2's evidence plus its resolution evidence, batched in one call) — both taken from the drift response, both `tool_result`s again carrying `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`. |
-| 7 | Same snapshot used | All three tool calls (run 1) carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
+| 6 | `get_evidence` using exactly the returned `evidence_refs` | Two separate `tool_use` calls, `mcp__aip__get_evidence`: `evidence_refs: ["evidence:asyncapi:order-service"]`, then `evidence_refs: ["evidence:otel:demo:2026-08-26:bfae54276215"]` — each finding's own `evidence_refs` only, no `resolution_evidence_refs`. Both `tool_result`s carry `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`. |
+| 7 | Same snapshot used | All three tool calls carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
 | 8 | Disconnect/stop | `claude -p` is one-shot: the process exits after its turn completes, closing its MCP connection. |
-| 9 | Reconnect/reinitialize | A second, independent `claude -p` process (fresh session ID, fresh prompt) performed its own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch. |
-| 10 | One read-only tool works after reconnect | That second process's `mcp__aip__get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with the same 4 dependency claims as before, same snapshot, and `tool_result` again carrying `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`. |
+| 9 | Reconnect/reinitialize | A second, independent `claude -p` process (fresh session ID, fresh prompt) performed its own tool discovery and call from scratch. |
+| 10 | One read-only tool works after reconnect | That second process's `mcp__aip__get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service`/`product-service` `CONFIRMED`), same snapshot, `tool_result` carrying `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`. |
 
-The passive capture also directly reconfirms both prior fixes still hold at this new candidate: every
-one of the 3 client processes' `server/discover` probe (`mcp-method: server/discover`,
-`mcp-protocol-version: 2026-07-28`) is cleanly rejected with `404`/`-32601` (I3.3 fix), and no process
-ever sends `subscriptions/listen` afterward; `mcp-protocol-version` is present on every negotiated
-follow-up Claude Code sends (it never omits the header, so the I3.4 fix's own code path is not
-exercised by this client's traffic).
+This redo does not directly reconfirm the I3.3/I3.4 transport-level fixes at the wire level (no passive
+capture was taken for cycle 1 or cycle 2); that reconfirmation stands on the original passive-capture
+evidence recorded for this same candidate SHA when this trace was first corrected under PR #152 (both
+processes' `server/discover` probe cleanly rejected, `mcp-protocol-version` present on every negotiated
+follow-up) — unaffected by this evidence-refs-only correction, since neither fix's code path depends on
+which `evidence_refs` a client passes to `get_evidence`.
 
 ### Sanitization statement (spec §6.15)
 
 Same statement as the prior qualification: no authorization headers, bearer tokens, cookies, API
 keys, refresh tokens, account identifiers, email addresses, personal identifiers, raw system prompts,
-or unrelated content of any kind in the passive capture or session transcripts (verified before
-extracting the `producer`/tool-call excerpts quoted above). Raw `.pcap` and session transcript files
-were ephemeral and deleted after producing this trace.
+or unrelated content of any kind in the session transcripts (verified before extracting the
+`producer`/tool-call excerpts quoted above). Session transcript files were ephemeral and deleted after
+producing this trace.
 
 ### Post-client state (spec §6.12/§6.15)
 
 | Field | Value |
 |---|---|
-| `revision_after` | `9` — equal to `revision_before` (`R = 9`). This check was taken after both `claude -p` processes above and **before** the separate Appendix A.2 UX run below. |
+| `revision_after` | `9` — equal to `revision_before` (`R = 9`). Measured directly via `read_revision_fence.py --json`, run after cycle 1, cycle 2, and the reconnect call, and **before** the separate Appendix A.2 UX run below. |
 | Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching the pre-client snapshot `S`. |
 
 Rechecked a second time after the separate Appendix A.2 UX run too (see that section below): `revision
-= 9` still, fixture still `COMPLETE` — this reconfirmation's zero-write evidence covers the entire
-tuple end to end, including the UX run, unlike the corresponding Codex CLI/prior Claude Code records
-(which relied on spec §6.12's joint-support model for their own UX portions).
+= 9` still, fixture still `COMPLETE` — this correction's zero-write evidence covers the entire tuple
+end to end (cycle 1, cycle 2, reconnect, and the UX run), all on one continuous fixture instance.
 
 ### Mandatory separate UX observation (spec §7.2, Appendix A.2)
 
-Run in a fresh `claude -p` process/session, separate from the protocol-qualification runs above.
+Run in a fresh `claude -p` process/session, after cycle 2's protocol qualification and reconnect had
+already completed.
 
 **Prompt used:** the fixed Appendix A.2 prompt, verbatim.
 
-**Where visible:** model `claude-sonnet-5` (not overridden), `claude -p` non-interactive, same
-`--allowedTools` approval configuration as the protocol run, `permission_denials: []`. `tool_result`
-content again carried `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` for both tool calls
-in this run.
+**Where visible:** model `claude-sonnet-5` (not overridden), `claude -p` non-interactive with
+`--allowedTools` pre-authorizing the three AIP tools, `permission_denials: []` (an initial attempt
+without `--allowedTools` was blocked on approval before reaching AIP at all — a local client-control
+quirk of non-interactive `-p` mode, not a classified attempt, since it never reached the server or any
+AIP tool). `tool_result` content carried `build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
+for both tool calls in the successful run.
 
 **§7.2 result table** (`YES` / `NO` / `PARTIAL` / `NOT_OBSERVED`):
 
@@ -145,86 +161,106 @@ in this run.
 | distinguished evidence from inference | `YES` |
 | avoided unused/dead/obsolete overclaim | `YES` |
 
-**Unedited observed outcome** (the agent's final message, verbatim):
+**Unedited observed outcome** (the agent's final message, verbatim — re-run for this correction so the
+UX observation is correctly sequenced after cycle 2's success, per Appendix A.2's own "after protocol
+qualification" ordering):
 
-> ## Drift query result
+> Ran `get_architecture_drift` for `service:order-service` in `demo`, window
+> `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`, then resolved every evidence ref it returned against
+> the **same** `snapshot_id` (`aip:snapshot:v1:685a3415...`) via `get_evidence`.
 >
-> `get_architecture_drift` for `service:order-service`, environment `demo`, window
-> `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`, snapshot `aip:snapshot:v1:685a3415…`. Outcome:
-> **PARTIAL** (one limitation attached, see Finding 1). Two drift claims were returned.
+> **Overall outcome: `PARTIAL`** (not `ANSWERED`) — AIP is itself flagging that one of the two claims
+> below has an unresolved identity, per its `limitations` array. That partiality is a property of the
+> answer, not something I'm inferring.
 >
-> ### Finding 1 — `order-service` → `queue:unused-q` (declared, not observed)
+> Two drift claims were returned.
 >
-> **1. Qualification:** `NOT_OBSERVED_IN_WINDOW`, `coverage: SUFFICIENT`. A `SENDS` relationship from
-> `order-service` to `queue:unused-q` is declared, but no OpenTelemetry observation of that send
-> occurred in the window, and AIP judged its OTel coverage of this window sufficient to trust that
-> absence (i.e., this isn't a blind spot — it's a real declared-vs-observed gap).
+> ## Finding 1 — `order-service` → `queue:unused-q` (SENDS)
 >
-> **2. Evidence (same snapshot):**
-> - `evidence:asyncapi:order-service` — `DECLARED`, source `ASYNCAPI`, file
->   `examples/order-service/asyncapi.yaml`. Supports `SENDS service:order-service → queue:unused-q`,
->   `CARRIES queue:unused-q → message:UnusedMessage`, and `CONFORMS_TO message:UnusedMessage →
->   schema:UnusedMessage`.
-> - `resolution_evidence_refs` is empty — there is no observation evidence backing this claim at all,
->   consistent with the "not observed" qualification.
+> **1. Qualification: `NOT_OBSERVED_IN_WINDOW`, coverage `SUFFICIENT`, destination_resolution
+> `DIRECT_TARGET_FALLBACK`**
+> AIP has a *declared* fact (from AsyncAPI) that order-service sends to `unused-q`, but found no OTel
+> observation of that send occurring inside the 2026-08-26→27 window. `coverage: SUFFICIENT` means
+> telemetry coverage in that window was judged adequate to detect the send if it had happened — so the
+> absence is meaningful, not a blind spot. `DIRECT_TARGET_FALLBACK` means AIP could not resolve a
+> downstream *consumer service* for this queue, so the drift object is the queue node itself rather
+> than a resolved service.
 >
-> **3. What AIP actually established:** `order-service`'s AsyncAPI spec declares it sends
-> `UnusedMessage` to `queue:unused-q`. During the queried window, with sufficient OTel coverage, no
-> send to that queue was observed. AIP also flagged a limitation (`UNRESOLVED_IDENTITY`):
-> `queue:unused-q` has no single evidenced consumer service, so AIP retained the queue itself as the
-> dependency target rather than guessing a downstream service.
+> **2. Evidence resolved against the same snapshot**
+> - `evidence:asyncapi:order-service` — `DECLARED`, source `ASYNCAPI`,
+>   `examples/order-service/asyncapi.yaml`. Its `supports` list includes `SENDS service:order-service
+>   -> queue:unused-q` (plus the unrelated `payment-q`/message-schema facts also declared in that same
+>   file).
+> - `resolution_evidence_refs` is empty — consistent with the stated limitation:
+>   `"queue:unused-q has no single evidenced consumer service; retained as the direct queue target
+>   rather than guessed."`
 >
-> **4. Not established:** AIP does not establish *why* the send wasn't observed (dead code, disabled
-> feature, timing outside the bucket granularity, etc.), does not establish that the send never
-> happens outside this window, and does not establish that the queue has zero consumers overall —
-> only that no single consumer could be evidenced.
+> **3. What AIP actually established**
+> - OrderService is *declared* (spec-level, AsyncAPI) to send to `unused-q`.
+> - In the specific 2026-08-26→27 demo window, with sufficient telemetry coverage, no OTel evidence of
+>   that send was recorded.
+> - AIP could not identify any service consuming `unused-q`, and explicitly declined to guess one.
 >
-> ### Finding 2 — `order-service` → `service:legacypricingservice` (observed, not declared)
+> **4. Not established**
+> AIP does not establish *why* the send wasn't observed (disabled feature, no traffic that day, broken
+> code path, etc.), does not establish that the queue is unused in general (only in this window), and
+> does not establish that the queue has no consumer at all — only that no consumer is evidenced.
 >
-> **1. Qualification:** `OBSERVED_ONLY`, `coverage: null`. A `CALLS` relationship was observed at
-> runtime, but nothing in the declared sources (OpenAPI/AsyncAPI/manifest) documents this dependency —
-> this is an undeclared ("shadow") dependency, the opposite drift direction from Finding 1. `coverage`
-> is not reported for this qualification type (it's only meaningful for absence claims like Finding
-> 1).
+> ## Finding 2 — `order-service` → `service:legacypricingservice` (CALLS)
 >
-> **2. Evidence (same snapshot):**
-> - `evidence:otel:demo:2026-08-26:bfae54276215` — `OBSERVED`/`OPENTELEMETRY`, window
->   `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`, `first_seen == last_seen ==
->   2026-08-26T12:00:00.044222Z`, `observation_count: 1`, `correlation_mode: CLIENT_SERVER`. Supports
->   `CALLS service:order-service → operation:...legacypricingservice:GET:/pricing/{sku}`.
-> - `resolution_evidence_refs` → `evidence:otel:demo:2026-08-26:29d4976aeaf9` — also
->   `OBSERVED`/`OPENTELEMETRY`, same window/timestamp. Supports `PROVIDES service:legacypricingservice
->   → operation:...GET:/pricing/{sku}`. This is what let AIP resolve the call target to a concrete
->   service (`destination_resolution: RESOLVED_SERVICE`).
+> **1. Qualification: `OBSERVED_ONLY`, coverage `null`, destination_resolution `RESOLVED_SERVICE`**
+> This is the inverse situation: there is *no declared* (OpenAPI/manifest) evidence anywhere that
+> order-service calls `LegacyPricingService`, but AIP found a runtime OTel observation of that call
+> inside the window. `RESOLVED_SERVICE` means AIP successfully resolved the call target operation
+> (`GET /pricing/{sku}`) to a real provider service via separate OTel evidence. `coverage: null` — AIP
+> reports no coverage judgment for this claim; I'm not filling that gap with an assumption either way.
 >
-> **3. What AIP actually established:** Exactly one client/server-correlated OTel observation, at
-> `2026-08-26T12:00:00.044222Z`, of `order-service` calling `GET /pricing/{sku}`, and a matching
-> observation of `legacypricingservice` providing that same operation — which is how AIP resolved the
-> call's destination. No declared source (OpenAPI, AsyncAPI, or the architecture manifest) documents
-> this call.
+> **2. Evidence resolved against the same snapshot**
+> - `evidence:otel:demo:2026-08-26:bfae54276215` — `OBSERVED`/`OPENTELEMETRY`, bucket
+>   `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`, `observation_count: 1`, `first_seen == last_seen ==
+>   2026-08-26T12:00:00.044222Z`, `correlation_mode: CLIENT_SERVER`. Supports `CALLS
+>   service:order-service -> operation:...legacypricingservice:GET:/pricing/{sku}`.
+> - `evidence:otel:demo:2026-08-26:29d4976aeaf9` (this claim's `resolution_evidence_refs` entry) — same
+>   window/timestamp, `observation_count: 1`. Supports `PROVIDES service:legacypricingservice ->
+>   operation:...GET:/pricing/{sku}`. This is what let AIP resolve the call's target to
+>   `LegacyPricingService` rather than leaving it as a bare operation.
 >
-> **4. Not established:** AIP does not establish frequency, regularity, or business significance of
-> this call — only a single observation in this window. It does not establish that this is a *newly
-> introduced* dependency (only that it's undeclared as of this snapshot), and it does not establish
-> anything about `legacypricingservice`'s status (e.g., deprecation) beyond the fact that it served
-> this one observed request.
+> **3. What AIP actually established**
+> - A single OTel-observed HTTP call from `order-service` to `GET /pricing/{sku}` occurred in the
+>   window, correlated client↔server.
+> - That operation's provider was independently observed (also once, same timestamp) to be
+>   `LegacyPricingService`.
+> - No declared/spec-level evidence supports this dependency anywhere in the current model — this is an
+>   undeclared (runtime-only) dependency: real traffic to a service that isn't reflected in any
+>   OpenAPI/manifest source.
+>
+> **4. Not established**
+> `observation_count: 1` means exactly one recorded observation — AIP does not establish frequency,
+> volume, or whether this is a recurring integration versus a one-off. It does not establish *why* the
+> dependency is undeclared (missing manifest entry vs. new/shadow integration vs. stale spec), and does
+> not establish criticality or intent. `coverage: null` means I cannot say whether telemetry coverage
+> was sufficient to have caught this earlier or would catch its absence — that judgment simply isn't in
+> the response.
 
 This is observational product evidence only, not a semantic release gate (spec §7.2).
 
 ### Disposition
 
-- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`.
-- Same-snapshot, reconnect, and exact-tool-count requirements independently confirmed via passive
-  capture. `producer.build_revision` directly confirmed from Claude Code's own session transcripts for
-  every tool call in this reconfirmation (protocol qualification, reconnect, and the UX run) — not
-  inferred or cross-confirmed via another client, correcting the gap flagged in PR #152 review.
-- Zero-write confirmed by direct revision-fence measurement covering the entire tuple end to end,
-  including the UX run (rechecked a second time after it).
-- One clean valid attempt, no failures. Both prior fixes (I3.3 direct-marker allowlist, I3.4
-  negotiated missing-header fallback) directly reconfirmed still correct via passive capture; neither
-  fix's own code path is exercised by Claude Code's traffic (it always sends
-  `MCP-Protocol-Version`, and never proceeds past the cleanly-rejected `server/discover` probe to
-  `subscriptions/listen`).
+- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`, on cycle 2's
+  attempt (see Attempt record) — cycle 1 is `MODEL_TOOL_SELECTION_FAILURE` and superseded.
+- `producer.build_revision` directly confirmed from Claude Code's own session transcripts for every
+  tool call in cycle 2's qualifying attempt, reconnect, and the UX run — not inferred or
+  cross-confirmed via another client, correcting the gap flagged in PR #152 review.
+- The `get_evidence`-exactness gap self-identified while building the I3.5 cross-client matrix (see the
+  second correction note above) is closed: cycle 2's two `get_evidence` calls each use only that
+  finding's own `evidence_refs`.
+- Zero-write confirmed by direct revision-fence measurement covering the entire tuple end to end
+  (cycle 1, cycle 2, reconnect, and the UX run — rechecked a second time after it), all on one
+  continuous fixture instance.
+- Transport-level reconfirmation of the I3.3/I3.4 fixes stands on the original passive-capture evidence
+  from this trace's first correction under PR #152 (see the protocol-workflow note above) — this
+  redo's own evidence is session-transcript-only, since no passive capture was available in this
+  environment for the redo.
 
 ---
 
