@@ -10,11 +10,12 @@ This directory has one candidate setup guide per targeted client family:
 **Candidate setup.** Every command and configuration fragment in these guides was checked against
 that client's current official documentation immediately before writing this guide (source URL and
 verification date recorded in each guide, and consolidated in
-`docs/specifications/0.4.2/i2-completion-record.md` once I2 completes). That is **syntax
-verification**, not **interoperability qualification** —
-whether the actual named client can complete the deterministic AIP workflow end to end against a
-real release candidate is I3's job, not I2's. Until I3 publishes its qualified client/platform
-matrix, nothing here is a "supported" claim.
+`docs/specifications/0.4.2/i2-completion-record.md`). That is **syntax verification**, not
+**interoperability qualification** — whether the actual named client can complete the deterministic
+AIP workflow end to end against a real release candidate is a separate, later claim. See the
+[v0.4.2 client/platform qualification matrix](../../docs/release-validation/v0.4.2-client-qualification.md)
+for which client/version combinations have actually been qualified — nothing in this directory alone
+is a "supported" claim.
 
 ## 1. Prepare the deterministic demo
 

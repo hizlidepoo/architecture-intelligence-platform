@@ -131,15 +131,21 @@ answers it statelessly — no session identifier is issued or required. The thre
 schemas, and their `ArchitectureAnswer` semantics are identical to direct mode; only the transport
 envelope differs. Client-specific setup steps for particular coding-agent tools are out of scope for
 this page — see [`examples/mcp-clients/`](../examples/mcp-clients/README.md) for candidate setup
-guides (Codex CLI, Claude Code, Cursor, VS Code). Those are verified configuration syntax, not yet a
-qualified-client claim — see that directory's README for the distinction.
+guides (Codex CLI, Claude Code, Cursor, VS Code). Setup syntax is verified separately from
+interoperability qualification; see the
+[v0.4.2 client/platform qualification matrix](release-validation/v0.4.2-client-qualification.md) for
+which specific client/version combinations have actually been qualified end to end.
 
 ## Local security boundary
 
 `/mcp` is built for a local or trusted-network posture, in `v0.4.2` as in every prior release: it
-has no public-internet authentication, so do not expose it directly to an untrusted network. AIP
-itself needs no LLM API key for this deterministic tool-call path — the coding-agent client on the
-other end may still need its own account or model access, independent of AIP.
+has no public-internet authentication, so do not expose it directly to an untrusted network. An
+`Origin` header outside the configured `allowed_origins` allowlist (`app/settings.py`) is rejected
+with `403` before either connection mode's logic runs — this Origin/Host boundary applies identically
+to direct and negotiated traffic; `v0.4.2` introduces no bypass for the new negotiated path
+(confirmed by `test_negotiated_origin_and_host_security_matches_direct_mode`). AIP itself needs no
+LLM API key for this deterministic tool-call path — the coding-agent client on the other end may
+still need its own account or model access, independent of AIP.
 
 ## Evidence drill-down
 

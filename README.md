@@ -146,9 +146,11 @@ examples/runtime-demo/mcp-demo.sh --serve
 ```
 
 AIP is now available at `http://localhost:8000/mcp`. Configure a coding-agent client using the
-examples below — configuration syntax is verified against each client's current official docs;
-release-qualified client/platform support is a separate, later claim (see
-[`examples/mcp-clients/`](examples/mcp-clients/README.md)).
+examples below — configuration syntax is verified against each client's current official docs.
+
+**Qualified client/platform combinations are listed in the
+[v0.4.2 compatibility matrix](docs/release-validation/v0.4.2-client-qualification.md). Other
+combinations are unverified unless listed.**
 
 ### Codex CLI
 
