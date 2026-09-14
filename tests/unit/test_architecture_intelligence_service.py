@@ -8,6 +8,7 @@ from app.architecture_intelligence.contracts import (
     Outcome,
     Producer,
     Qualification,
+    SCHEMA_VERSION,
 )
 from app.architecture_intelligence.repository import SnapshotUnstable, StableSnapshot
 from app.architecture_intelligence.request import (
@@ -406,6 +407,39 @@ def _evidence_request(**overrides) -> EvidenceRequest:
     payload = {"evidence_refs": [DECLARED_EVIDENCE_ID], "snapshot_id": FAKE_SNAPSHOT_ID}
     payload.update(overrides)
     return EvidenceRequest.model_validate(payload)
+
+
+def test_every_service_answer_path_uses_shared_schema_version(monkeypatch):
+    dependency_success = _service(
+        monkeypatch, rows={**EMPTY_ROWS, "service_name": "OrderService"}
+    ).get_service_dependencies(_request())
+    dependency_refusal = _service(
+        monkeypatch, rows={**EMPTY_ROWS, "service_name": None}
+    ).get_service_dependencies(_request())
+    drift_success = _service(
+        monkeypatch, rows={**EMPTY_ROWS, "service_name": "OrderService"}
+    ).get_architecture_drift(_drift_request())
+    drift_refusal = _service(
+        monkeypatch, rows={**EMPTY_ROWS, "service_name": None}
+    ).get_architecture_drift(_drift_request())
+    evidence_success = _evidence_service(
+        monkeypatch,
+        rows={"evidence": {DECLARED_EVIDENCE_ID: _DECLARED_ROW}, "relations": []},
+    ).get_evidence(_evidence_request())
+    evidence_refusal = _evidence_service(
+        monkeypatch, rows=EMPTY_EVIDENCE_ROWS
+    ).get_evidence(_evidence_request(snapshot_id=OTHER_SNAPSHOT_ID))
+
+    answers = [
+        dependency_success,
+        dependency_refusal,
+        drift_success,
+        drift_refusal,
+        evidence_success,
+        evidence_refusal,
+    ]
+    assert len(answers) == 6
+    assert {answer.schema_version for answer in answers} == {SCHEMA_VERSION}
 
 
 def test_evidence_unstable_snapshot_yields_snapshot_not_available_without_snapshot_ref(
