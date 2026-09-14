@@ -3,7 +3,217 @@
 Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparation.md`](../../specifications/0.4.2/i3-client-qualification-and-release-preparation.md)
 §5 (Qualified Client Tuple Contract), §6 (Actual-Client Qualification Procedure), Appendix B.
 
-## Result: **FAILED** — root cause: product defect (AIP was stricter than the spec's own backward-compatibility allowance), not merely client incompatibility
+## Result: **QUALIFIED**
+
+This tuple's first attempt (against `6461db6d51ee29e9c973e62b005aa84d5d95c077`) was `FAILED` for a real
+product defect — AIP's guard rejected a markerless negotiated follow-up more strictly than the MCP
+specification's own backward-compatibility allowance and the pinned SDK's own already-implemented
+fallback. That record is preserved unedited below under "Historical record." The defect is fixed
+(`app/mcp/guard.py`, ADR 0014's second Amendment, spec §11/§11.1/§12/§28 of the I1 spec) and this tuple
+was requalified against the new candidate.
+
+Against the new candidate, this tuple's protocol qualification itself took two attempts within a single
+cycle: the first attempt's `get_evidence` call combined both drift findings into one call and, for
+Finding 2, merged the claim's own `evidence_refs` with a separate `resolution_evidence_refs` entry —
+deviating from the fixed Appendix A.1 prompt's "using exactly the evidence_refs" instruction (one call
+per finding, each finding's own `evidence_refs` only). This is the same defect pattern PR #153 review
+found in Cursor's trace. It is recorded here as a failed valid attempt
+(`MODEL_TOOL_SELECTION_FAILURE`, spec §6.6), and a second attempt in a fresh chat used only each
+finding's own `evidence_refs`, confirmed explicitly. `producer.build_revision` was confirmed for every
+Architecture Answer response in the qualifying attempt from the start (drift, both `get_evidence`
+calls, and the reconnect `get_service_dependencies` call), applying the lesson from the Claude Code and
+Cursor corrections directly rather than needing a second correction pass.
+
+## Qualification against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
+
+### Tuple identity
+
+| Field | Value |
+|---|---|
+| Client family | VS Code |
+| Client product | Visual Studio Code + GitHub Copilot Chat (built-in MCP support) |
+| Client version | `1.137.0` (commit `645f29cc3176500b4b5762ba887cf2a7f0ffdf2c`) |
+| Extension/plugin | GitHub Copilot Chat — `@github/copilot 1.0.84.70.gdb75d0d` (`@github/copilot-sdk 1.0.13-preview.4`) |
+| OS | Windows_NT x64 `10.0.26200` (host), WSL2 (Linux distro) for AIP and the working directory |
+| Execution mode | WSL — VS Code (Windows desktop app, Electron `42.10.0`) connected to the WSL2 distro via Remote-WSL, working directory `/tmp/aip-vscode` inside WSL |
+| Client location | Remote extension host running inside WSL2 |
+| AIP location | Docker container inside WSL2, published port `8000` |
+| Network topology | VS Code Remote extension host (inside WSL2) → `localhost:8000` (WSL2 published port) → `architecture-intelligence` container |
+| Configuration mechanism | `.vscode/mcp.json` in the worktree root: `{"servers": {"aip": {"type": "http", "url": "http://localhost:8000/mcp"}}}`, per `examples/mcp-clients/vscode.md` |
+| Transport | Streamable HTTP |
+| Approval mode | Automatic — operator confirmed all tool calls across all three runs (the qualifying attempt, reconnect, UX observation) executed without any approve/allow prompt |
+| Candidate SHA | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` |
+| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, confirmed for **every** Architecture Answer response in the qualifying attempt (`get_architecture_drift`, both `get_evidence` calls, and the reconnect `get_service_dependencies` call), each asked as a direct follow-up quoting the field from the response already returned |
+| Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
+| Observed initialization/protocol version | Not independently captured for this run (no trace-level JSON-RPC capture was taken this time, unlike the historical FAILED attempt); the MCP output-channel log (info level) confirms `Connection state: Running` and `Discovered 3 tools` for every connect/reconnect cycle |
+| Session IDs issued / used / reuse | Not independently captured for the same reason; consistent with every other client family's evidence that AIP's negotiated mode issues none |
+| Qualification date | 2026-09-14 |
+
+Configuration re-verification is unchanged from the historical record — `.vscode/mcp.json`'s shape was
+reverified against VS Code's official docs source on 2026-09-12 (see `examples/mcp-clients/vscode.md`'s
+own verification record) and is not repeated in full here.
+
+### Pre-client state (spec §6.2/§6.3) — captured directly, before any client interaction
+
+`examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
+`50862a352626ea38d2fbb36f2ff0ecfc667266d0`, run fresh and dedicated to this VS Code trace alone — unlike
+the historical FAILED attempt's shared-with-Cursor baseline, this fixture instance was never touched by
+any other client. This agent had direct shell access to the same host running the fixture and ran
+`check_fixture_state.py`/`read_revision_fence.py` itself, immediately after `--serve` completed and
+*before* `.vscode/mcp.json` was even created: `fixture = COMPLETE`, `mismatches: []`,
+`snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
+`revision_before = 9`.
+
+### Attempt record (spec §6.5/§6.6)
+
+| Attempt | Classification | Outcome |
+|---|---|---|
+| 1 | `MODEL_TOOL_SELECTION_FAILURE` | Fixed Appendix A.1 prompt pasted verbatim, fresh chat. Called `get_architecture_drift` correctly, but issued a single `get_evidence` call combining both findings' `evidence_refs` **and**, for Finding 2, the separate `resolution_evidence_refs` entry `evidence:otel:demo:2026-08-26:29d4976aeaf9` — deviating from the fixed prompt's "for every returned finding, call get_evidence using exactly the evidence_refs" instruction (one call per finding, each finding's own `evidence_refs` only). Prerequisites were healthy and the model otherwise executed correctly, so this is a valid attempt that failed on model tool selection, not infrastructure or client control. |
+| 2 | — | Fresh chat, same fixed Appendix A.1 prompt pasted verbatim. Called `get_architecture_drift`, then issued two separate `get_evidence` calls, each using only that finding's own `evidence_refs` (Finding 1: `["evidence:asyncapi:order-service"]`; Finding 2: `["evidence:otel:demo:2026-08-26:bfae54276215"]`, no `resolution_evidence_refs`). `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up for the drift call and both `get_evidence` calls. |
+
+Per §6.6, one `MODEL_TOOL_SELECTION_FAILURE` on the LLM-mediated path permits exactly one further valid
+attempt, which attempt 2 is. Two valid client attempts total, within the per-cycle budget of 2 (spec
+§6.5); no infrastructure-invalidated runs occurred.
+
+### Required successful protocol workflow (spec §6.8)
+
+This table describes attempt 2 (the qualifying attempt) and its own reconnect. Evidence source is the
+operator's relayed chat transcripts and the VS Code MCP output-channel log lines (client UI evidence,
+spec §6.13); the pre-/post-client fixture and revision checks were run directly by this agent (see
+above and below), not relayed.
+
+| # | Requirement | Evidence |
+|---|---|---|
+| 1 | Initialization/negotiation | MCP output-channel log: `Starting server aip` → `Connection state: Running` (2026-09-14 09:55:08). |
+| 2 | Tool discovery | Same log, immediately after: `Discovered 3 tools` (09:55:09). |
+| 3 | Exactly three AIP tools discovered | `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — matching the tool calls made across the session and the log's own tool count. |
+| 4 | `get_architecture_drift` | Drift called for `service:order-service`, `demo`, `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`. `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. |
+| 5 | Deterministic structured drift result | `queue:unused-q` → `NOT_OBSERVED_IN_WINDOW` (coverage `SUFFICIENT`, `UNRESOLVED_IDENTITY` limitation) and `service:legacypricingservice` (via `GET /pricing/{sku}`) → `OBSERVED_ONLY` — the exact spec §6.9 expected result. |
+| 6 | `get_evidence` using exactly the returned `evidence_refs` | Finding 1: `evidence_refs: ["evidence:asyncapi:order-service"]`. Finding 2: `evidence_refs: ["evidence:otel:demo:2026-08-26:bfae54276215"]` — the claim's own `evidence_refs` only, no `resolution_evidence_refs`. Both `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. |
+| 7 | Same snapshot used | All calls (drift, both `get_evidence`) carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
+| 8 | Disconnect/stop | Operator stopped the `aip` server via MCP: List Servers. Log: `Stopping server aip` → `Connection state: Stopped` (10:04:55). |
+| 9 | Reconnect/reinitialize | Operator started `aip` again via the same command. Log: `Starting server aip` → `Connection state: Running` → `Discovered 3 tools` (10:05:14). A fresh chat then successfully called AIP's tools again from scratch. |
+| 10 | One read-only tool works after reconnect | `get_service_dependencies` for `service:order-service` returned `outcome: PARTIAL` with 3 dependency claims (`product-service`, `payment-service`, `unused-q`, all `NOT_OBSERVED_IN_WINDOW`), same pinned `snapshot_id`; `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. Copilot Chat defaulted the observation window to "today" (`2026-09-14`) rather than reusing the demo window, since it was not told one for this call — spec §6.11 requires only tool discovery plus one successful read-only call for reconnect (the same window and the §6.9 deterministic result are required only for the qualifying attempt itself, not the reconnect check), which this satisfies. |
+
+### Sanitization statement (spec §6.15)
+
+All evidence in this section is text and MCP output-channel log lines relayed directly by the
+repository owner, describing only AIP architecture-fact content and JSON-RPC connection-state/tool-
+count lines — no authorization headers, tokens, cookies, account identifiers, email addresses, personal
+identifiers, raw system prompts, or unrelated content of any kind. AIP's local demo endpoint requires no
+credential.
+
+### Post-client state (spec §6.12/§6.15) — captured directly, after the entire tuple including the UX run
+
+| Field | Value |
+|---|---|
+| `revision_after` | `9` — equal to `revision_before` (`R = 9`), measured directly by this agent via `read_revision_fence.py --json`, run *after* attempt 2's drift/`get_evidence` calls, the reconnect/`get_service_dependencies` call, **and** the separate Appendix A.2 UX run below — all on one continuous fixture instance dedicated to this trace alone. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching every snapshot ID quoted throughout the run. |
+
+Unlike Cursor's tuple, this trace's entire session — the failed attempt 1, the qualifying attempt 2, the
+reconnect, and the UX run — ran on one continuous fixture instance with no teardown in between, so this
+is a genuine single tuple-local `R' = R` proof covering the whole session end to end.
+
+### Mandatory separate UX observation (spec §7.2, Appendix A.2)
+
+Run in a fresh Copilot Chat, after protocol qualification (attempt 2) and its reconnect had already
+completed.
+
+**Prompt used:** the fixed Appendix A.2 prompt, verbatim.
+
+**Where visible:**
+
+| | |
+|---|---|
+| Model/provider | Claude Sonnet 4.6 |
+| Agent mode | GitHub Copilot Chat's Agent mode |
+| Tool approval mode | Automatic — no approval prompt requested or reached |
+
+**§7.2 result table** (`YES` / `NO` / `PARTIAL` / `NOT_OBSERVED`):
+
+| Observation | Result |
+|---|---|
+| selected AIP | `YES` |
+| called `get_architecture_drift` | `YES` |
+| found `LegacyPricingService` | `YES` |
+| preserved `OBSERVED_ONLY` | `YES` |
+| found `unused-q` | `YES` |
+| preserved `NOT_OBSERVED_IN_WINDOW` | `YES` |
+| called `get_evidence` | `YES` |
+| preserved the same snapshot | `YES` |
+| distinguished evidence from inference | `YES` |
+| avoided unused/dead/obsolete overclaim | `YES` |
+
+**Unedited observed outcome** (the agent's response, as relayed verbatim by the operator — sanitization
+statement above):
+
+> Here are the two drift findings, fully resolved against the same snapshot
+> (`aip:snapshot:v1:685a341…`).
+>
+> **Finding 1 — `NOT_OBSERVED_IN_WINDOW`**
+> Claim: `aip:claim:v1:ca0dd73b…`
+> Relation: `service:order-service` –[SENDS]→ `queue:unused-q`
+> Destination resolution: `DIRECT_TARGET_FALLBACK`
+>
+> Qualification: `NOT_OBSERVED_IN_WINDOW` with `coverage: SUFFICIENT`. The spec declares this send; no
+> OpenTelemetry observation of it appeared in the 2026-08-26 window. Because declared coverage was
+> deemed sufficient to judge absence, AIP flags it as drift: a behaviour the architecture says must
+> exist was not seen.
+>
+> Evidence: `evidence:asyncapi:order-service` (`DECLARED / ASYNCAPI`, `asyncapi.yaml`) — declares
+> `SENDS service:order-service → queue:unused-q`, `CARRIES queue:unused-q → message:UnusedMessage`,
+> `CONFORMS_TO message:UnusedMessage → schema:UnusedMessage`. `resolution_evidence_refs` is empty — no
+> observed evidence contributed to destination resolution.
+>
+> Limitation: `UNRESOLVED_IDENTITY` — "queue:unused-q has no single evidenced consumer service;
+> retained as the direct queue target rather than guessed." AIP could not resolve the queue to a
+> downstream service because no evidence record establishes a consumer.
+>
+> What AIP established: the AsyncAPI spec declares order-service sends to queue:unused-q; no OTel trace
+> for that send appeared in the 2026-08-26 window; queue:unused-q has no evidenced consumer in this
+> snapshot. AIP does not establish why no trace was observed, or whether a consumer exists outside this
+> snapshot.
+>
+> **Finding 2 — `OBSERVED_ONLY`**
+> Claim: `aip:claim:v1:8c43c7b5…`
+> Relation: `service:order-service` –[CALLS]→ `operation:service:legacypricingservice:GET:/pricing/{sku}` → `service:legacypricingservice`
+> Destination resolution: `RESOLVED_SERVICE`
+>
+> Qualification: `OBSERVED_ONLY`. A call to LegacyPricingService was seen in telemetry but there is no
+> corresponding declared evidence. `coverage` is null because there is no declared claim to measure
+> against.
+>
+> Evidence: `evidence:otel:demo:2026-08-26:bfae54276215` (`OBSERVED / OPENTELEMETRY`, `CLIENT_SERVER`,
+> window 2026-08-26) declares `CALLS service:order-service → operation:service:legacypricingservice:GET:/pricing/{sku}`,
+> first/last seen `2026-08-26T12:00:00.044222Z`, 1 observation. Resolution evidence
+> `evidence:otel:demo:2026-08-26:29d4976aeaf9` (same envelope) declares
+> `PROVIDES service:legacypricingservice → that same operation` — this is what let AIP resolve the
+> operation to `service:legacypricingservice` (`RESOLVED_SERVICE`).
+>
+> What AIP established: on 2026-08-26 at 12:00 UTC, service:order-service made exactly one
+> `GET /pricing/{sku}` call to service:legacypricingservice, corroborated by a matching server-side
+> span; this dependency is absent from every declared source in the snapshot. AIP does not establish
+> whether the call is intentional, a bug, or recent; nor call volume beyond the single observed
+> occurrence, nor whether it recurs outside this window.
+
+This is observational product evidence only, not a semantic release gate (spec §7.2).
+
+### Disposition
+
+- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`, on attempt 2
+  (see Attempt record) — attempt 1 is `MODEL_TOOL_SELECTION_FAILURE` and superseded.
+- The historical `FAILED` result against the invalidated candidate was a real product defect, not a
+  client incompatibility to work around; it is fixed and this requalification is against the fix.
+- Every pre-/post-client fixture and revision check in this qualification was captured directly by this
+  agent on a fixture instance dedicated to this trace alone — a genuine, single, tuple-local `R' = R`
+  proof covering the entire session end to end (qualifying attempt, reconnect, and UX run).
+- `producer.build_revision` is confirmed for every Architecture Answer response in the qualifying
+  attempt (drift, both `get_evidence` calls, and the reconnect call), applied from the start rather than
+  needing a later correction.
+
+## Historical record: `FAILED` attempt against invalidated candidate `6461db6d51ee29e9c973e62b005aa84d5d95c077`
+
+### Root cause: product defect (AIP was stricter than the spec's own backward-compatibility allowance), not merely client incompatibility
 
 This is not simply "VS Code failed to qualify," but it is also not "VS Code did nothing wrong." Two
 distinct normative statements are both true at once, per the MCP specification's own Protocol Version
@@ -34,7 +244,7 @@ per the I3 plan, Cursor and VS Code qualification is operator-run). Evidence for
 operator's relayed VS Code MCP output-channel log with trace logging enabled (client UI evidence, spec
 §6.13) — a genuine client-side transport log, not a paraphrase.
 
-## Tuple identity
+### Tuple identity
 
 | Field | Value |
 |---|---|
@@ -56,7 +266,7 @@ operator's relayed VS Code MCP output-channel log with trace logging enabled (cl
 | Session IDs issued / used / reuse | None observed (stateless mode; no `mcp-session-id` anywhere in the log) |
 | Qualification date | 2026-09-13 |
 
-## Pre-client state (spec §6.2/§6.3)
+### Pre-client state (spec §6.2/§6.3)
 
 `examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
 `6461db6d51ee29e9c973e62b005aa84d5d95c077`, run once and shared across this candidate's Cursor and VS
@@ -76,7 +286,7 @@ already exercised, not a pristine post-seed state. This distinction matters if t
 as evidence for anything about the fixture's state before *any* client touched it; it is not that, and
 is not offered as that.
 
-## Attempt record (spec §6.5/§6.6)
+### Attempt record (spec §6.5/§6.6)
 
 | Attempt | Classification | Outcome |
 |---|---|---|
@@ -90,7 +300,7 @@ exchange, or reconnect failed") — not `INFRASTRUCTURE_FAILURE`, because the fa
 deterministic consequence of AIP's own handling of a specific, real request shape, not an independent
 prerequisite failure.
 
-## Root-cause isolation
+### Root-cause isolation
 
 Confirmed via the operator's relayed VS Code MCP output-channel trace log (client UI evidence, spec
 §6.13) and independently re-derived/verified by this agent by reading the pinned SDK's own source and
@@ -146,7 +356,7 @@ the official MCP specification text — not accepted at face value:
    in this code path, so no subprocess-isolated regression test is required for the fix (an in-process
    ASGI test is sufficient and sound).
 
-## Sanitized reproduction
+### Sanitized reproduction
 
 Minimal, complete, reproducible with `curl` alone:
 
@@ -165,7 +375,7 @@ own assertion in `tests/unit/test_mcp_discovery.py`, not a looser "202 or 200" e
 to the pinned SDK's own `DEFAULT_NEGOTIATED_VERSION` fallback handling, matching real VS Code
 behavior.
 
-## Sanitization statement (spec §6.15)
+### Sanitization statement (spec §6.15)
 
 The relayed VS Code MCP output-channel trace log contained only JSON-RPC protocol messages
 (method names, protocol versions, client/server identification strings) — no authorization headers,
@@ -175,7 +385,7 @@ credential at all). The client-identifying string `"clientInfo":{"name":"Visual 
 is retained as legitimate client-version evidence, not a personal identifier. No raw capture file
 exists for this trace beyond the text already reproduced above; nothing further required deletion.
 
-## Post-client state (spec §6.12/§6.15)
+### Post-client state (spec §6.12/§6.15)
 
 | Field | Value |
 |---|---|
@@ -189,7 +399,7 @@ that leaves the server in an indeterminate state), there is no reason to believe
 the rejected request never reached tool dispatch — but this is not the same as a directly measured
 before/after pair for this one attempt.
 
-## Disposition
+### Disposition
 
 - Fix landed: `app/mcp/guard.py`'s negotiated-mode branch no longer rejects a markerless follow-up
   request for lacking an `MCP-Protocol-Version` header; see ADR 0014's second "Amendment" section and
