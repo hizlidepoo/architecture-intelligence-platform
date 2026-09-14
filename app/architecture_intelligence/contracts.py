@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -106,10 +106,14 @@ _ALLOWED_DELIVERY_PAIRS = {
 }
 
 
+ProducerName = Literal["architecture-intelligence-platform"]
+PRODUCER_NAME: ProducerName = get_args(ProducerName)[0]
+
+
 class Producer(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    name: Literal["architecture-intelligence-platform"]
+    name: ProducerName
     version: str
     build_revision: str
 
