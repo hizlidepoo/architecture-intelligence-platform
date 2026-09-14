@@ -37,3 +37,6 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "demo_e2e: Compose-based end-to-end tests for the runtime demo lifecycle",
+]

@@ -71,10 +71,13 @@ ENVIRONMENT = "demo"
 WINDOW_START = "2026-08-26T00:00:00.000000Z"
 WINDOW_END = "2026-08-27T00:00:00.000000Z"
 
-pytestmark = pytest.mark.skipif(
-    REAL_DOCKER is None,
-    reason="requires Docker + Compose to drive the real demo stack (spec §44.1)",
-)
+pytestmark = [
+    pytest.mark.demo_e2e,
+    pytest.mark.skipif(
+        REAL_DOCKER is None,
+        reason="requires Docker + Compose to drive the real demo stack (spec §44.1)",
+    ),
+]
 
 
 def _env(**overrides: str) -> dict[str, str]:
@@ -89,8 +92,14 @@ def _env(**overrides: str) -> dict[str, str]:
 
 
 def _run_script(
-    *args: str, timeout: int, env: dict[str, str] | None = None
+    *args: str,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    reuse_images: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    run_env = dict(env if env is not None else _env())
+    if reuse_images:
+        run_env["AIP_DEMO_REUSE_IMAGES"] = "1"
     return subprocess.run(
         [BASH, str(DEMO_SCRIPT), *args],
         cwd=REPO_ROOT,
@@ -98,7 +107,7 @@ def _run_script(
         text=True,
         timeout=timeout,
         check=False,
-        env=env if env is not None else _env(),
+        env=run_env,
     )
 
 
@@ -314,7 +323,7 @@ class TestServeLifecycle:
         # 2. Second `--serve` run must detect COMPLETE and mutate nothing (spec §15.4/§45): no
         # re-import, no telemetry reseed, identical snapshot, identical observed-relation count.
         marker_2 = _utc_now_marker()
-        second = _run_script("--serve", timeout=240)
+        second = _run_script("--serve", timeout=240, reuse_images=True)
         assert second.returncode == 0, second.stderr
         assert "fixture classification: COMPLETE" in second.stdout
         assert "skipping declaration re-import and telemetry reseed" in second.stdout

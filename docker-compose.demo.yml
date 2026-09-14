@@ -34,6 +34,9 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+    # Override the image's production-oriented 30s polling interval for fast local/CI readiness.
+    healthcheck:
+      interval: 1s
 
   neo4j:
     image: neo4j:5
@@ -47,12 +50,12 @@ services:
       - neo4j-demo-logs:/logs
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
-      interval: 5s
+      interval: 1s
       timeout: 5s
       retries: 20
 
   otel-collector:
-    image: otel/opentelemetry-collector:latest
+    image: otel/opentelemetry-collector:0.159.0@sha256:7725a7a10c87d8853208bdd4bb3439ad3c0d7b32b4292b9300ac07c8daba14a2
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./examples/runtime-demo/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro

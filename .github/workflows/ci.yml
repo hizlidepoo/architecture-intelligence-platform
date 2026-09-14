@@ -1,8 +1,8 @@
 name: CI
 
 # H5 spec §26: checkout -> Python setup -> {dependency install, ruff check, ruff format --check,
-# unit tests, integration tests}. Must run the full H1-H4 + 11H test baseline (spec doesn't pin an
-# exact test count - see CHANGELOG.md for what shipped in each release).
+# unit tests, integration tests}. The integration baseline is split across two required jobs so the
+# Compose demo E2E does not extend the core integration critical path.
 on:
   push:
   pull_request:
@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: lint + test
+  quality:
+    name: quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,9 +41,59 @@ jobs:
       - name: Unit tests
         run: uv run pytest tests/unit
 
+  integration-core:
+    name: integration-core
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
       # Testcontainers-backed - needs Docker, which is preinstalled on ubuntu-latest runners.
-      - name: Integration tests
-        run: uv run pytest tests/integration
+      - name: Core integration tests
+        run: uv run pytest tests/integration -m "not demo_e2e" --durations=25
+
+  demo-e2e:
+    name: demo-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Compose demo E2E tests
+        run: uv run pytest tests/integration -m demo_e2e --durations=25
+
+  required-tests:
+    # Keep the existing branch-protection context while making all three parallel jobs mandatory.
+    name: lint + test
+    if: always()
+    needs: [quality, integration-core, demo-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required test jobs
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          INTEGRATION_CORE_RESULT: ${{ needs['integration-core'].result }}
+          DEMO_E2E_RESULT: ${{ needs['demo-e2e'].result }}
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$INTEGRATION_CORE_RESULT" = success
+          test "$DEMO_E2E_RESULT" = success
 
   dependency-audit:
     name: dependency security scan (pip-audit, spec §29)

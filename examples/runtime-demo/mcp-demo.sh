@@ -116,6 +116,13 @@ start_stack() {
   # Bring up AIP + neo4j + collector, but deliberately NOT the live traffic-generator service: the
   # only evidence in the graph must be the frozen batch seeded by prepare_fixture_if_empty.
   step "Starting architecture-intelligence, neo4j and otel-collector"
+  if [[ "${AIP_DEMO_REUSE_IMAGES:-0}" == "1" ]]; then
+    # The lifecycle E2E's idempotency pass validates graph behavior, not image rebuilding. Reuse the
+    # images and running containers produced by its first pass so this check stays focused and fast.
+    "${COMPOSE[@]}" up -d --no-build architecture-intelligence otel-collector
+    return
+  fi
+
   if [[ -n "${BUILD_REVISION}" ]]; then
     # docker compose up has no --build-arg flag (only `docker compose build` does), so a pinned
     # BUILD_REVISION needs its own explicit build step before `up -d` rather than `up -d --build`.
@@ -169,7 +176,7 @@ run_fixture_checker() {
 }
 
 wait_for_observed_relations() {
-  # The collector batches for 5s before forwarding, so the seeded spans reach AIP shortly *after*
+  # The collector batches briefly before forwarding, so the seeded spans may reach AIP shortly after
   # seed_frozen_evidence.py exits - ask the graph, don't guess with a fixed sleep.
   local relations_url="${AIP_URL}/api/runtime/relations?environment=${ENVIRONMENT}&since=${WINDOW_START}&until=${WINDOW_END}"
   local observed=0
