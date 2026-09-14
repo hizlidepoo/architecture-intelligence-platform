@@ -537,15 +537,29 @@ def _drift_request(**overrides) -> ArchitectureDriftRequest:
 
 
 def test_all_service_answers_use_shared_schema_version(monkeypatch):
-    svc = _service(monkeypatch, raises=SnapshotUnstable("boom"))
-
-    answers = [
-        svc.get_service_dependencies(_request()),
-        svc.get_architecture_drift(_drift_request()),
-        svc.get_evidence(_evidence_request()),
+    refusal_svc = _service(monkeypatch, raises=SnapshotUnstable("boom"))
+    refusal_answers = [
+        refusal_svc.get_service_dependencies(_request()),
+        refusal_svc.get_architecture_drift(_drift_request()),
+        refusal_svc.get_evidence(_evidence_request()),
     ]
 
-    assert {answer.schema_version for answer in answers} == {ARCHITECTURE_SCHEMA_VERSION}
+    success_svc = _service(
+        monkeypatch, rows={**EMPTY_ROWS, "service_name": "OrderService"}
+    )
+    success_evidence_svc = _evidence_service(
+        monkeypatch,
+        rows={"evidence": {DECLARED_EVIDENCE_ID: _DECLARED_ROW}, "relations": []},
+    )
+    success_answers = [
+        success_svc.get_service_dependencies(_request()),
+        success_svc.get_architecture_drift(_drift_request()),
+        success_evidence_svc.get_evidence(_evidence_request()),
+    ]
+
+    assert {answer.schema_version for answer in refusal_answers + success_answers} == {
+        ARCHITECTURE_SCHEMA_VERSION
+    }
 
 
 def _call(operation: str, *evidence_ids: str) -> dict:
