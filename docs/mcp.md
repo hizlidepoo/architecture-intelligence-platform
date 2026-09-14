@@ -139,11 +139,12 @@ which specific client/version combinations have actually been qualified end to e
 ## Local security boundary
 
 `/mcp` is built for a local or trusted-network posture, in `v0.4.2` as in every prior release: it
-has no public-internet authentication, so do not expose it directly to an untrusted network. An
-`Origin` header outside the configured `allowed_origins` allowlist (`app/settings.py`) is rejected
-with `403` before either connection mode's logic runs — this Origin/Host boundary applies identically
-to direct and negotiated traffic; `v0.4.2` introduces no bypass for the new negotiated path
-(confirmed by `test_negotiated_origin_and_host_security_matches_direct_mode`). AIP itself needs no
+has no public-internet authentication, so do not expose it directly to an untrusted network. A
+request whose `Origin` or `Host` header falls outside the configured `allowed_origins`/`allowed_hosts`
+allowlists (`app/settings.py`, both passed to the SDK's `TransportSecuritySettings`) is rejected with
+`403` before either connection mode's logic runs — this Origin/Host boundary applies identically to
+direct and negotiated traffic; `v0.4.2` introduces no bypass for the new negotiated path (confirmed by
+`test_negotiated_origin_and_host_security_matches_direct_mode`). AIP itself needs no
 LLM API key for this deterministic tool-call path — the coding-agent client on the other end may
 still need its own account or model access, independent of AIP.
 
