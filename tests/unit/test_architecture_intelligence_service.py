@@ -544,9 +544,7 @@ def test_all_service_answers_use_shared_schema_version(monkeypatch):
         refusal_svc.get_evidence(_evidence_request()),
     ]
 
-    success_svc = _service(
-        monkeypatch, rows={**EMPTY_ROWS, "service_name": "OrderService"}
-    )
+    success_svc = _service(monkeypatch, rows={**EMPTY_ROWS, "service_name": "OrderService"})
     success_evidence_svc = _evidence_service(
         monkeypatch,
         rows={"evidence": {DECLARED_EVIDENCE_ID: _DECLARED_ROW}, "relations": []},
