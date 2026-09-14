@@ -168,6 +168,51 @@ for the published release.
   source independently re-verified — see
   [`docs/release-validation/v0.4.1-post-release-verification.md`](docs/release-validation/v0.4.1-post-release-verification.md).
 
+## v0.4.2 — shipped
+
+**Goal: MCP Client Interoperability**
+
+Purpose: make the existing read-only Architecture Intelligence MCP surface directly consumable by
+qualified coding-agent clients, without changing architecture semantics. Adds a negotiated MCP
+transport mode alongside the existing direct-envelope mode; adds no discovery source, Canonical Model
+family, or MCP tool. See [`docs/specifications/0.4.2/`](docs/specifications/0.4.2/) for the full
+design history and
+[`v0.4.2`](https://github.com/michaelegner/architecture-intelligence-platform/releases/tag/v0.4.2)
+for the published release.
+
+| Increment | Purpose | Status |
+|---|---|---|
+| I1 — Dual-Mode MCP Transport | Negotiated MCP transport mode alongside the existing direct envelope, identical Architecture Answer semantics in both | ✓ complete — `2b6f865` |
+| I2 — Client-Ready Demo and Documentation | Candidate setup guides for Codex CLI, Claude Code, Cursor, and VS Code; local security boundary documentation | ✓ complete — `279c0ae` |
+| I3 — Actual-Client Qualification, Release, and Post-Release Verification | Real-client qualification (not test-suite-only), candidate freeze, RC/final publication, post-release verification | ✓ complete — **shipped as `v0.4.2`** |
+
+- ✓ A negotiated MCP transport mode (standard `initialize`/session handshake), dispatching to the
+  same three read-only tools with byte-identical `ArchitectureAnswer` semantics as the existing
+  direct-envelope mode — see [`docs/mcp.md`](docs/mcp.md) and
+  [`docs/adr/0014-negotiated-mcp-client-interoperability.md`](docs/adr/0014-negotiated-mcp-client-interoperability.md).
+- ✓ Four coding-agent client families qualified end to end against a real, running server — not only
+  a test suite — each completing the full protocol-qualification and reconnect workflow with
+  byte-for-byte identical architecture results: Codex CLI `0.154.0`, Claude Code CLI `2.1.270`,
+  Cursor `3.20.17`, VS Code `1.137.0` + GitHub Copilot Chat. Cross-client semantic mismatches = `0`,
+  evidence-meaning mismatches = `0` — see the
+  [qualified client/platform matrix](docs/release-validation/v0.4.2-client-qualification.md).
+- ✓ Actual-client qualification found and fixed two real interoperability defects the test suite
+  alone had not caught: a negotiated-mode routing gap that let an unbounded direct-marked method
+  reach the SDK and hang the server (found via Claude Code), and an over-strict rejection of a
+  negotiated follow-up missing the `MCP-Protocol-Version` header, stricter than both the pinned SDK's
+  own fallback and the MCP specification's own backward-compatibility allowance (found via VS
+  Code/GitHub Copilot Chat) — both fixed and reconfirmed before candidate freeze; see ADR 0014's two
+  Amendment sections.
+- ✓ `v0.4.2`'s full qualification (candidate gate table, four qualified tuples, cross-client
+  comparison) and the technical GO decision are recorded in
+  [`docs/release-validation/v0.4.2-go-no-go.md`](docs/release-validation/v0.4.2-go-no-go.md)
+  (**RELEASE_READY**, publication authorized by the repository owner 2026-09-14).
+- ✓ `v0.4.2` was tagged at the exact GO candidate, published, and its GHCR artifact and tagged source
+  independently re-verified — see
+  [`docs/release-validation/v0.4.2-post-release-verification.md`](docs/release-validation/v0.4.2-post-release-verification.md),
+  which also records an authorized-owner risk acceptance for 14 newly-disclosed HIGH/CRITICAL Trivy
+  findings, all Debian base-image OS package patches unrelated to any AIP code or dependency change.
+
 ## v0.5 — Broader Architecture Discovery (planned)
 
 **Goal: Broaden what AIP can safely know about distributed systems.**
