@@ -29,6 +29,7 @@ PRODUCER = Producer(
     name="architecture-intelligence-platform", version="0.4.1", build_revision="f" * 40
 )
 
+
 def test_service_single_sources_every_answer_schema_version():
     source = inspect.getsource(service_module.ArchitectureIntelligenceService)
     assert source.count("schema_version=ARCHITECTURE_ANSWER_SCHEMA_VERSION") == 6
