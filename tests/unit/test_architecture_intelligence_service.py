@@ -1,9 +1,11 @@
+import inspect
 from datetime import UTC, datetime
 
 from app.analysis.runtime import ServiceTelemetryCoverage
 from app.architecture_intelligence import service as service_module
 from app.architecture_intelligence.canonical_json import canonical_json_bytes
 from app.architecture_intelligence.contracts import (
+    ARCHITECTURE_ANSWER_SCHEMA_VERSION,
     LimitationCode,
     Outcome,
     Producer,
@@ -26,6 +28,13 @@ OTHER_SNAPSHOT_ID = "aip:snapshot:v1:" + "b" * 64
 PRODUCER = Producer(
     name="architecture-intelligence-platform", version="0.4.1", build_revision="f" * 40
 )
+
+def test_service_single_sources_every_answer_schema_version():
+    source = inspect.getsource(service_module.ArchitectureIntelligenceService)
+    assert source.count("schema_version=ARCHITECTURE_ANSWER_SCHEMA_VERSION") == 6
+    assert 'schema_version="0.4"' not in source
+    assert service_module.ARCHITECTURE_ANSWER_SCHEMA_VERSION == ARCHITECTURE_ANSWER_SCHEMA_VERSION
+
 
 _NO_COVERAGE = ServiceTelemetryCoverage(
     service_id="service:order-service",
