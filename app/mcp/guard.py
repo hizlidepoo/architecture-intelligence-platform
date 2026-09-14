@@ -117,7 +117,7 @@ from mcp_types.jsonrpc import INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND,
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.mcp.server import TOOL_NAMES
+from app.mcp.tools import TOOL_NAMES
 
 MCP_PATH = "/mcp"
 _EXPECTED_ARGUMENT_KEY = "request"
