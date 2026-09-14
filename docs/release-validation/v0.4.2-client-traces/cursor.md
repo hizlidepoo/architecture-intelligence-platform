@@ -8,10 +8,20 @@ Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparatio
 This tuple's first attempt (against `6461db6d51ee29e9c973e62b005aa84d5d95c077`) was `UNVERIFIED` for a
 pure procedure gap — the mandatory pre-client baseline was never captured — not a semantic finding;
 that record is preserved unedited below under "Historical record." Both the missing-baseline gap and
-the classified `CLIENT_CONTROL_FAILURE` cycle from that attempt were corrected in this run: the
-pre-client `check_fixture_state.py`/`read_revision_fence.py` baseline was captured *before* Cursor was
-configured or touched AIP, and the fixed Appendix A.1 prompt was pasted verbatim from the start (no
-paraphrase cycle this time).
+the classified `CLIENT_CONTROL_FAILURE` cycle from that attempt were corrected against the current
+candidate: the pre-client `check_fixture_state.py`/`read_revision_fence.py` baseline was captured
+*before* Cursor was configured or touched AIP, and the fixed Appendix A.1 prompt was pasted verbatim
+from the start (no paraphrase cycle).
+
+**Second correction, PR #153 review:** the first pass against the current candidate itself had two
+further issues, both fixed below. First, its `get_evidence` call for Finding 2 combined the claim's own
+`evidence_refs` with a separate `resolution_evidence_refs` entry, deviating from the fixed prompt's
+"exactly the evidence_refs" instruction — this run is reclassified as a failed valid attempt
+(`MODEL_TOOL_SELECTION_FAILURE`) per §6.6, and a fresh cycle was run that used only the claim's own
+`evidence_refs`, confirmed explicitly by the agent. Second, `producer.build_revision` had only been
+confirmed for the `get_architecture_drift` response, not for each `get_evidence`/
+`get_service_dependencies` response as §6.8/§6.13 require — the corrected cycle below confirms it for
+every one.
 
 ## Qualification against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
 
@@ -32,7 +42,7 @@ paraphrase cycle this time).
 | Transport | Streamable HTTP |
 | Approval mode | Automatic — operator confirmed all tool calls across all three runs (drift qualification, reconnect, UX) executed without any approve/allow prompt |
 | Candidate SHA | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` |
-| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, confirmed by asking the agent to quote it directly from the `get_architecture_drift` response it had just used (not inferred from the checkout, image, or another client's session) |
+| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — exact match, confirmed for **every** Architecture Answer response in the qualifying cycle (`get_architecture_drift`, both `get_evidence` calls, and the reconnect `get_service_dependencies` call), each asked as a direct follow-up quoting the field from the response already returned — not inferred from the checkout, image, or another client's session |
 | Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
 | Observed initialization/protocol version | Not independently captured (no network capture in this evidence tier); tool discovery and correct three-tool behavior confirmed via Cursor's own MCP settings panel and every tool call succeeding |
 | Session IDs issued / used / reuse | Not independently captured for the same reason; consistent with every other client family's evidence that AIP's negotiated mode issues none |
@@ -46,40 +56,52 @@ finding) and is not repeated in full here.
 
 `examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
 `50862a352626ea38d2fbb36f2ff0ecfc667266d0`, from a clean `git worktree --detach` at that exact SHA.
-Unlike the first attempt, **this agent had direct shell access to the same host running the fixture
-this time** (the operator and this agent share the same machine) and ran
+Unlike the first attempt, **this agent had direct shell access to the same host running the fixture**
+(the operator and this agent share the same machine) and ran
 `check_fixture_state.py`/`read_revision_fence.py` itself, immediately after `--serve` completed and
 *before* `.cursor/mcp.json` was even created: `fixture = COMPLETE`, `mismatches: []`,
 `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
 `revision_before = 9`. This closes the exact gap the prior attempt's `UNVERIFIED` result was about.
 
+**Scope note:** this baseline, and the two attempt cycles and reconnect it covers below, were captured
+on a *second*, separately-`--serve`d fixture instance — the first instance (used for the original,
+now-superseded attempt below and the Appendix A.2 UX run) was torn down in between for an unrelated
+operational reason (setting up the VS Code tuple concurrently). Both instances are independently
+`COMPLETE` at the same deterministic snapshot with the same deterministic `revision = 9` baseline (this
+fixture's seeding is fully deterministic), but they are not one continuous session. The UX run's own
+zero-write proof is the *first* instance's post-client check, taken after cycle 1 and the original
+reconnect below had already completed — see the note under Post-client state.
+
 ### Attempt record (spec §6.5/§6.6)
 
 | Cycle | Attempt | Classification | Outcome |
 |---|---|---|---|
-| 1 | 1 | — | Full success on the first attempt: the fixed Appendix A.1 prompt was pasted verbatim into a fresh chat from the start (the paraphrase-then-correct cycle from the prior attempt was not repeated). Called `get_architecture_drift`, then `get_evidence` per finding, using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications exactly. |
+| 1 | 1 | `MODEL_TOOL_SELECTION_FAILURE` (PR #153 review reclassification) | Fixed Appendix A.1 prompt pasted verbatim, first fixture instance. Called `get_architecture_drift` correctly, but for Finding 2's `get_evidence` call, combined the claim's own `evidence_refs` (`evidence:otel:demo:2026-08-26:bfae54276215`) with a separate `resolution_evidence_refs` entry (`evidence:otel:demo:2026-08-26:29d4976aeaf9`) into one call — deviating from the fixed prompt's "using exactly the evidence_refs" instruction, which changes the requested architecture operation (spec §6.8). Prerequisites were healthy and the model otherwise executed correctly, so this is a valid attempt that failed on model tool selection, not infrastructure or client control. Reconnect was also performed in this cycle (`get_service_dependencies`, correct result) but is superseded by cycle 2's own reconnect below, done with `producer.build_revision` confirmed. |
+| 2 | 1 | — | Fresh chat, second fixture instance, same fixed Appendix A.1 prompt pasted verbatim. Called `get_architecture_drift`, then for each finding called `get_evidence` using **only** that claim's own `evidence_refs` — explicitly confirmed by the agent, which stated it did not use `resolution_evidence_refs`. `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up for the drift call and both `get_evidence` calls. |
 
-One valid client attempt used, well within the LLM-mediated budget of 2 (spec §6.5). No
-infrastructure-invalidated runs or classified failures occurred at any point in this attempt.
+Per §6.6, one `MODEL_TOOL_SELECTION_FAILURE` on the LLM-mediated path permits exactly one further valid
+attempt, which cycle 2 is. Two valid client attempts total, within the per-cycle budget of 2 (spec
+§6.5); no infrastructure-invalidated runs occurred.
 
 ### Required successful protocol workflow (spec §6.8)
 
 Evidence source for this section is the operator's relayed chat transcripts (client UI evidence, spec
 §6.13); the pre-/post-client fixture and revision checks were run directly by this agent (see above and
-below), not relayed.
+below), not relayed. This table describes cycle 2 (the qualifying cycle) and its own reconnect, both on
+the second fixture instance.
 
 | # | Requirement | Evidence |
 |---|---|---|
 | 1 | Initialization/negotiation | Cursor's MCP settings panel showed `aip` connected before the run began. |
 | 2 | Tool discovery | Same panel, listing the server's tools. |
 | 3 | Exactly three AIP tools discovered | `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — no others. |
-| 4 | `get_architecture_drift` | Drift called for `service:order-service`, `demo`, `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`. |
+| 4 | `get_architecture_drift` | Drift called for `service:order-service`, `demo`, `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`. `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. |
 | 5 | Deterministic structured drift result | `queue:unused-q` → `NOT_OBSERVED_IN_WINDOW` (coverage `SUFFICIENT`, `DIRECT_TARGET_FALLBACK`, `UNRESOLVED_IDENTITY` limitation) and `service:legacypricingservice` (via `GET /pricing/{sku}`) → `OBSERVED_ONLY` — the exact spec §6.9 expected result. |
-| 6 | `get_evidence` using returned `evidence_refs` | `evidence:asyncapi:order-service` (Finding 1) resolved with `missing_evidence_refs: []`; `evidence:otel:demo:2026-08-26:bfae54276215` + its `resolution_evidence_refs` entry `evidence:otel:demo:2026-08-26:29d4976aeaf9` (Finding 2) resolved together, `missing_evidence_refs: []` — both `outcome: ANSWERED`. |
-| 7 | Same snapshot used | All calls carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
-| 8 | Disconnect/stop | Operator reloaded the Cursor window ("Developer: Reload Window"), closing the prior chat's MCP session. |
+| 6 | `get_evidence` using exactly the returned `evidence_refs` | Finding 1: `evidence_refs: ["evidence:asyncapi:order-service"]`. Finding 2: `evidence_refs: ["evidence:otel:demo:2026-08-26:bfae54276215"]` — the claim's own `evidence_refs` only; the agent explicitly confirmed `resolution_evidence_refs` was *not* included in either call. Both `outcome: ANSWERED`, `missing_evidence_refs: []`, both `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. |
+| 7 | Same snapshot used | All calls (drift, both `get_evidence`) carry `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
+| 8 | Disconnect/stop | Operator reloaded the Cursor window ("Developer: Reload Window"), closing cycle 2's MCP session. |
 | 9 | Reconnect/reinitialize | A fresh chat, after the reload, successfully discovered and called AIP's tools again from scratch. |
-| 10 | One read-only tool works after reconnect | `get_service_dependencies` for `service:order-service` (same window) returned `outcome: PARTIAL` with 4 dependency claims (`product-service` `CONFIRMED`, `payment-service` `CONFIRMED`, `legacypricingservice` `OBSERVED_ONLY`, `unused-q` `NOT_OBSERVED_IN_WINDOW`), same snapshot. |
+| 10 | One read-only tool works after reconnect | `get_service_dependencies` for `service:order-service` (same window) returned `outcome: PARTIAL` with 4 dependency claims (`product-service` `CONFIRMED`, `payment-service` `CONFIRMED`, `legacypricingservice` `OBSERVED_ONLY`, `unused-q` `NOT_OBSERVED_IN_WINDOW`), same snapshot; `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` confirmed via direct follow-up. |
 
 ### Sanitization statement (spec §6.15)
 
@@ -88,16 +110,29 @@ repository owner, describing only AIP architecture-fact content — no authoriza
 cookies, account identifiers, email addresses, personal identifiers, raw system prompts, or unrelated
 content of any kind. AIP's local demo endpoint requires no credential.
 
-### Post-client state (spec §6.12/§6.15) — captured directly, after the entire tuple including the UX run
+### Post-client state — fixture instance #1 (spec §6.12/§6.15) — covers cycle 1 (superseded) and the UX run
 
 | Field | Value |
 |---|---|
-| `revision_after` | `9` — equal to `revision_before` (`R = 9`), measured directly by this agent via `read_revision_fence.py --json`, run *after* the drift/reconnect calls **and** after the separate Appendix A.2 UX run below — this tuple's zero-write evidence covers the entire session end to end. |
-| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching every snapshot ID quoted throughout the run. |
+| `revision_after` | `9` — equal to instance #1's `revision_before` (`R = 9`), measured directly by this agent via `read_revision_fence.py --json`, run *after* cycle 1's drift/`get_evidence` calls and its original reconnect, **and** after the separate Appendix A.2 UX run below, all on fixture instance #1. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching every snapshot ID quoted throughout cycle 1 and the UX run. |
 
-This closes the second half of the gap the prior attempt's `UNVERIFIED` result was about: both
-`revision_before` and `revision_after` are now genuine tuple-local measurements taken directly by this
-agent, not relayed operator readings or a baseline borrowed from another execution.
+This is the zero-write proof for the Appendix A.2 UX run below (see the Scope note under Pre-client
+state): the UX run was never repeated on instance #2, so its own tuple-local `R' = R` comparison is
+this one, taken on instance #1. It also covers cycle 1, which is no longer the qualifying attempt (see
+Attempt record) but did not write to the graph either — consistent with a `MODEL_TOOL_SELECTION_FAILURE`
+classification rather than any kind of transport or graph-mutation defect.
+
+### Post-client state — fixture instance #2 (spec §6.12/§6.15) — covers cycle 2 and its own reconnect
+
+| Field | Value |
+|---|---|
+| `revision_after` | `9` — equal to instance #2's `revision_before` (`R = 9`, same deterministic baseline as instance #1), measured directly by this agent via `read_revision_fence.py --json`, run *after* cycle 2's drift/`get_evidence` calls and cycle 2's own (redone) reconnect/`get_service_dependencies` call. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged, matching every snapshot ID quoted throughout cycle 2. |
+
+This is the tuple-local zero-write proof for the qualifying cycle (cycle 2) and its reconnect — the
+evidence that actually satisfies spec §6.8's required protocol workflow and §6.12's zero-write proof
+for this qualification.
 
 ### Mandatory separate UX observation (spec §7.2, Appendix A.2)
 
@@ -201,11 +236,15 @@ This is observational product evidence only, not a semantic release gate (spec �
 
 ### Disposition
 
-- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`.
-- Both gaps from the prior `UNVERIFIED` attempt are closed: the pre-client baseline was captured
-  directly by this agent before any client interaction, and the post-client fence was captured
-  directly after the entire tuple including the UX run — a genuine tuple-local `R' = R` proof, not a
-  borrowed or partial one.
+- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`, on cycle 2's
+  attempt (see Attempt record) — cycle 1 is reclassified `MODEL_TOOL_SELECTION_FAILURE` and superseded.
+- Both gaps from the original `UNVERIFIED` attempt are closed: every pre-/post-client fixture and
+  revision check in this qualification was captured directly by this agent, not relayed or borrowed
+  from another execution — a genuine tuple-local `R' = R` proof for both fixture instances involved
+  (instance #1: cycle 1 + UX run; instance #2: cycle 2 + its own reconnect).
+- Both PR #153 review findings are closed: the qualifying cycle's `get_evidence` calls use only each
+  claim's own `evidence_refs`, and `producer.build_revision` is confirmed for every Architecture Answer
+  response in the qualifying cycle (drift, both `get_evidence` calls, and the reconnect call).
 - One clean valid attempt, no `CLIENT_CONTROL_FAILURE` cycle this time — the fixed Appendix A.1
   prompt was pasted verbatim from the start.
 - `producer.build_revision` confirmed directly from Cursor's own response (asked as a follow-up
