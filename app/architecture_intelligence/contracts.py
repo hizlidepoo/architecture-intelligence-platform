@@ -12,11 +12,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.provenance.model import EvidenceType, SourceType
+
+ArchitectureAnswerSchemaVersion = Literal["0.4"]
+ARCHITECTURE_ANSWER_SCHEMA_VERSION = get_args(ArchitectureAnswerSchemaVersion)[0]
 
 _SHA256_HEX = r"[0-9a-f]{64}"
 _SNAPSHOT_ID_PATTERN = rf"^aip:snapshot:v1:{_SHA256_HEX}$"
@@ -595,7 +598,7 @@ class ArchitectureAnswer[T: BaseModel](BaseModel):
         frozen=True, extra="forbid", json_schema_extra=_architecture_answer_schema_extra
     )
 
-    schema_version: Literal["0.4"]
+    schema_version: ArchitectureAnswerSchemaVersion
     producer: Producer
     tool: Literal["get_service_dependencies", "get_evidence", "get_architecture_drift"]
     outcome: Outcome
