@@ -210,7 +210,7 @@ for the published release.
 - ✓ `v0.4.2` was tagged at the exact GO candidate, published, and its GHCR artifact and tagged source
   independently re-verified — see
   [`docs/release-validation/v0.4.2-post-release-verification.md`](docs/release-validation/v0.4.2-post-release-verification.md),
-  which also records an authorized-owner risk acceptance for 14 newly-disclosed HIGH/CRITICAL Trivy
+  which also records an authorized-owner risk acceptance for 12 newly-disclosed HIGH/CRITICAL Trivy
   findings, all Debian base-image OS package patches unrelated to any AIP code or dependency change.
 
 ## v0.5 — Broader Architecture Discovery (planned)
