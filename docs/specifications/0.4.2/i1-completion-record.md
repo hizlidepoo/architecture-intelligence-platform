@@ -10,22 +10,26 @@ now, after I1 and I2 are both complete, satisfying that gate.
 ## Run identity
 
 - **I1 (Dual-Mode MCP Transport):** merged to `main` as `2b6f865` (PR #135, predates I2 entirely).
-- **Candidate binding:** `RELEASE_CANDIDATE_SHA = 6461db6d51ee29e9c973e62b005aa84d5d95c077`, frozen by
-  I3.2's re-freeze (`docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`), superseding the
-  original `71e2d8b954fa92430723fced302baa3666255397` binding. Unlike the earlier rebind from
-  `279c0ae` to `71e2d8b` (a pure citation update over an unmodified I1 suite), **this rebind follows a
-  real I1 behavior change**: I3.3's actual-client qualification against `71e2d8b` found that
-  `app/mcp/guard.py` forwarded any direct-marked request naming a method outside `{tools/list,
-  tools/call}` straight to the mounted SDK app, and the SDK's own handling of at least one such
-  method (`subscriptions/listen`, sent by a real Claude Code client) hangs the process indefinitely —
-  a single-request denial-of-service reachable by any client. `71e2d8b` is INVALIDATED for this reason
-  (see `docs/release-validation/v0.4.2-rc.1-candidate-preparation.md`'s own invalidation notice). The
-  fix — closing the routing boundary to a general allowlist of the methods direct mode has ever
-  actually implemented, not a `subscriptions/listen`-specific denylist — is recorded in
-  [ADR 0014's Amendment section](../../adr/0014-negotiated-mcp-client-interoperability.md) and in
-  `docs/specifications/0.4.2/i1-dual-mode-mcp-transport.md` §10.1/§11.1/§28. This record's I1 §3.1
-  table and exit statement below are updated accordingly, and the regression suite was re-run in full
-  at `6461db6d51ee29e9c973e62b005aa84d5d95c077` — a genuine re-verification, not a citation-only rebind.
+- **Candidate binding:** `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`, frozen by
+  I3.2's second re-freeze (`docs/release-validation/v0.4.2-rc.3-candidate-preparation.md`), superseding
+  the `6461db6d51ee29e9c973e62b005aa84d5d95c077` binding. This is the second genuine behavior-change
+  rebind for this record (the first being `71e2d8b` → `6461db6d`, for the direct-marked-method
+  allowlist fix): I3.4's actual-client qualification against `6461db6d` found that
+  `app/mcp/guard.py`'s negotiated-mode branch hard-rejected any markerless follow-up request missing
+  an `MCP-Protocol-Version` header — stricter than both the pinned SDK's own already-implemented
+  missing-header fallback and the MCP specification's own server-side backward-compatibility
+  allowance for exactly this case (the client-side rule is a separate MUST that a real client, VS
+  Code's GitHub Copilot Chat MCP client, does not fully honor on `notifications/initialized`; AIP's
+  job per the spec is to tolerate that gracefully, not reject it). `6461db6d` is INVALIDATED for this
+  reason (see `docs/release-validation/v0.4.2-rc.2-candidate-preparation.md`'s own invalidation
+  notice). The fix — forwarding a markerless follow-up with a missing header to the pinned SDK, while
+  still rejecting one whose header is *present* and explicitly names the direct/single-exchange
+  `2026-07-28` era — is recorded in
+  [ADR 0014's second Amendment section](../../adr/0014-negotiated-mcp-client-interoperability.md) and
+  in `docs/specifications/0.4.2/i1-dual-mode-mcp-transport.md` §11/§11.1/§12/§28. This record's I1
+  §3.1 table and exit statement below are updated accordingly, and the regression suite was re-run in
+  full at `50862a352626ea38d2fbb36f2ff0ecfc667266d0` — a genuine re-verification, not a citation-only
+  rebind.
 
 ## Regression suite (full local run at `RELEASE_CANDIDATE_SHA`)
 
@@ -36,21 +40,15 @@ now, after I1 and I2 are both complete, satisfying that gate.
 | `uv run pytest tests/unit` | 1001 passed |
 | `uv run pytest tests/integration` | 288 passed |
 
-288 integration tests = the 287 count at `71e2d8b` + 1 new subprocess-isolated regression test,
-`tests/integration/test_mcp_direct_marker_dos_regression.py::test_subscriptions_listen_cannot_hang_the_server`,
-added by the guard fix (PR #145) to prove the exact real-world `subscriptions/listen` reproduction now
-terminates within a strict, OS-enforced timeout instead of hanging the server. The guard fix's own
-added unit-level checks in `tests/unit/test_mcp_discovery.py` (an unimplemented-method rejection check
-for a second method, a header/body-mismatch-priority check, and a post-rejection server-health check,
-net of one removed check — an in-process `asyncio.wait_for`-based version of the `subscriptions/listen`
-reproduction that a PR #145 review round found was not actually fail-bounded, since the offending SDK
-code never yields to the event loop for `wait_for`'s cancellation to run; replaced by the subprocess-
-isolated integration test below) are helper
-functions called from inside the single existing `test_mcp_protocol_and_discovery` test, so they add
-**zero** collected unit-test items; they strengthen that one test's assertions without changing the
-unit count. The 1001 unit count (+3 over 998) is entirely unrelated unit coverage from PRs #142/#143
-that merged into `main` in the same commit range (two evidence-reference-validation tests, one
-OpenAPI-version-metadata test) — neither of which touches I1's transport behavior.
+1001/288 — identical counts to the prior `6461db6d` binding. PR #150's fix consolidated two unit-level
+regression helpers into one dedicated scenario test
+(`_check_vscode_full_sequence_without_protocol_header_is_accepted`), still called from inside the
+single existing `test_mcp_protocol_and_discovery` test item, so this adds **zero** collected unit-test
+items — same net effect as the direct-marked-method allowlist fix's own helper additions before it.
+No integration test file was added or removed by this fix, so the 288 count also carries over
+unchanged; the underlying assertions are strictly stronger (exact `initialize` →
+`notifications/initialized` → `tools/list` sequence performed by one test, exact `202`/empty-body
+notification response asserted rather than "200 or 202").
 
 ## I1 §3.1 required items
 
@@ -59,6 +57,7 @@ OpenAPI-version-metadata test) — neither of which touches I1's transport behav
 | Direct mode (unchanged v0.4.0 envelope) | `tests/unit/test_mcp_discovery.py::test_mcp_protocol_and_discovery` — all pre-existing `_check_*` helpers exercising the direct envelope |
 | Direct-marked method allowlist (I3.3 correction, spec §10.1) | `tests/unit/test_mcp_discovery.py`'s `_check_another_unimplemented_direct_marked_method_is_also_rejected` (proves the fix is a general allowlist, not a `subscriptions/listen`-specific denylist entry — the other real Claude Code method observed, `server/discover`, is rejected the same way), `_check_header_body_mismatch_takes_priority_over_unimplemented_method`, `_check_server_stays_responsive_after_rejecting_an_unimplemented_direct_method`; `tests/integration/test_mcp_direct_marker_dos_regression.py::test_subscriptions_listen_cannot_hang_the_server` (the exact `subscriptions/listen` reproduction, run in a genuinely separate OS process with an OS-enforced socket timeout — an in-process `asyncio.wait_for` check cannot bound this hang, since the offending SDK code never yields to the event loop) |
 | Negotiated mode | `tests/unit/test_mcp_discovery.py`'s `_check_markerless_initialize_reaches_negotiated_sdk_path`, `_check_negotiated_tools_call_shares_the_direct_tool_implementation` |
+| Negotiated missing-header fallback (I3.4 correction, spec §11) | `tests/unit/test_mcp_discovery.py`'s `_check_vscode_full_sequence_without_protocol_header_is_accepted` (the directly-observed real-world `initialize` → headerless `notifications/initialized` reproduction, plus the broader `tools/list` fallback contract, in one dedicated scenario — exact `202`/empty-body notification response asserted), `_check_markerless_tools_list_without_header_falls_back_to_sdk`, `_check_markerless_tools_call_without_header_falls_back_to_sdk`, `_check_session_id_header_alone_is_not_a_direct_marker` (a session id alone, still no version header, is delegated the same way); `_check_direct_era_header_without_marker_is_rejected` confirms a *present* direct-era header without a marker is still rejected, unaffected by this fix |
 | Malformed-body precedence | `tests/unit/test_mcp_discovery.py`'s `_check_malformed_json_without_direct_header_reaches_sdk_parse_handler` (owned by the SDK's parser when no direct header is present) and `_check_malformed_json_with_direct_header_is_owned_by_direct_path` (stays on the direct path when `mcp-method` is present) |
 | Unsupported HTTP methods (405 contract) | `tests/unit/test_mcp_discovery.py`'s `_check_get_is_rejected_with_405_before_sdk_invocation`, `_check_delete_is_rejected_with_405_before_sdk_invocation`, `_check_head_is_rejected_with_405_and_empty_body`, `_check_other_non_post_methods_are_rejected_with_405` (PUT/PATCH/OPTIONS) |
 | Origin/Host enforcement | `tests/unit/test_mcp_discovery.py::_check_disallowed_origin_is_rejected`; `tests/integration/test_mcp_negotiated_transport.py::test_negotiated_origin_and_host_security_matches_direct_mode` (proves the negotiated path introduces no bypass) |
@@ -93,16 +92,23 @@ duplicates, the three existing files' broader semantic-equivalence assertions.
 
 ## I1 exit statement
 
-> GO — At `6461db6d51ee29e9c973e62b005aa84d5d95c077` (`RELEASE_CANDIDATE_SHA`, re-frozen by I3.2 after
-> `71e2d8b954fa92430723fced302baa3666255397`'s invalidation), AIP's direct (`2026-07-28`) and
-> negotiated MCP transport modes remain semantically equivalent: identical `ArchitectureAnswer`
-> results for equivalent requests, identical snapshot/evidence continuity in both cross-mode
-> directions, identical Origin/Host protection, and identical non-POST rejection behavior. Neither
-> mode issues a session identifier (`NOT_APPLICABLE` for conditional-session qualification). Zero
-> graph writes occur across every I1 routing path — direct and negotiated, success and rejection, for
-> all three tools — proven in one consolidated test rather than only per-tool. A direct-marked request
-> naming a method outside the closed allowlist AIP has ever actually implemented for direct mode
-> (`tools/list`, `tools/call`) is now rejected with a clean `METHOD_NOT_FOUND` (-32601) rather than
-> blindly forwarded to the mounted SDK app — closing the single-request denial-of-service found during
-> I3.3 actual-client qualification (a real Claude Code client's legitimate `subscriptions/listen`
-> traffic hung the server indefinitely under the pre-fix candidate). I1 blockers = 0.
+> GO — At `50862a352626ea38d2fbb36f2ff0ecfc667266d0` (`RELEASE_CANDIDATE_SHA`, re-frozen a second time
+> by I3.2 after `6461db6d51ee29e9c973e62b005aa84d5d95c077`'s invalidation, which itself superseded
+> `71e2d8b954fa92430723fced302baa3666255397`), AIP's direct (`2026-07-28`) and negotiated MCP
+> transport modes remain semantically equivalent: identical `ArchitectureAnswer` results for
+> equivalent requests, identical snapshot/evidence continuity in both cross-mode directions, identical
+> Origin/Host protection, and identical non-POST rejection behavior. Neither mode issues a session
+> identifier (`NOT_APPLICABLE` for conditional-session qualification). Zero graph writes occur across
+> every I1 routing path — direct and negotiated, success and rejection, for all three tools — proven
+> in one consolidated test rather than only per-tool. A direct-marked request naming a method outside
+> the closed allowlist AIP has ever actually implemented for direct mode (`tools/list`, `tools/call`)
+> is rejected with a clean `METHOD_NOT_FOUND` (-32601) rather than blindly forwarded to the mounted
+> SDK app — closing the single-request denial-of-service found during I3.3 actual-client
+> qualification (a real Claude Code client's legitimate `subscriptions/listen` traffic hung the server
+> indefinitely under the pre-fix candidate). A markerless negotiated follow-up with no
+> `MCP-Protocol-Version` header at all is now forwarded to the pinned SDK's own graceful fallback
+> rather than hard-rejected — closing the connection failure found during I3.4 actual-client
+> qualification (VS Code's real GitHub Copilot Chat MCP client, which omits this header on
+> `notifications/initialized`, could not connect to AIP at all under the pre-fix candidate); a
+> markerless follow-up whose header is present and explicitly names the direct/single-exchange era
+> remains rejected, unaffected. I1 blockers = 0.

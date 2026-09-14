@@ -5,15 +5,214 @@ Spec: [`docs/specifications/0.4.2/i3-client-qualification-and-release-preparatio
 
 ## Result: **QUALIFIED**
 
-This tuple was first qualified against the pre-fix candidate `71e2d8b954fa92430723fced302baa3666255397`
-(see `docs/release-validation/v0.4.2-client-traces/claude-code.md`'s Disposition section) but never
-committed as its own trace file. That candidate was invalidated by an unrelated Claude Code
-transport-layer defect (fixed by the ADR 0014 amendment) that Codex CLI's traffic never exercised —
-Codex CLI is a **negotiated-mode** client and never sends the `mcp-method`/`mcp-name` direct-mode
-markers the defect required. Per spec §4.4, the tuple is nonetheless reconfirmed here in full against
-the new, post-fix `RELEASE_CANDIDATE_SHA` rather than carried forward by assertion.
+This tuple has been qualified twice, against two different (now-superseded) candidates, per spec
+§4.4's requirement that a candidate-affecting transport fix be reconfirmed rather than carried forward
+by assertion — neither prior candidate's invalidation had anything to do with Codex CLI's own traffic
+(both were unrelated defects found via Claude Code's and VS Code's traffic, respectively; Codex CLI's
+own negotiated traffic never exercised either code path). The most recent reconfirmation, against the
+current `RELEASE_CANDIDATE_SHA`, is recorded first below; the original qualification against the first
+invalidated candidate (`6461db6d51ee29e9c973e62b005aa84d5d95c077`) is preserved unedited under
+"Historical record" further down.
 
-## Tuple identity
+## Reconfirmation against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`
+
+### Tuple identity
+
+| Field | Value |
+|---|---|
+| Client family | Codex CLI |
+| Client product | `codex-cli` |
+| Client version | `0.154.0` |
+| Extension/plugin | N/A — built in |
+| OS | Linux 5.15.153.1-microsoft-standard-WSL2, x86_64 |
+| Execution mode | WSL |
+| Client location | Same host as AIP (localhost) |
+| AIP location | Docker container, same host, published port `8000` |
+| Network topology | Client (host, WSL) → `localhost:8000` (published port) → `architecture-intelligence` container |
+| Configuration mechanism | `codex mcp add aip --url http://localhost:8000/mcp` (per `examples/mcp-clients/codex.md`), global scope (`~/.codex/config.toml`) |
+| Transport | Streamable HTTP |
+| Approval mode | `codex exec --skip-git-repo-check -s read-only` (non-interactive); no approval prompt was requested or reached — MCP tool calls are read-only network calls, not sandboxed shell commands, so they are not gated by the exec sandbox/approval system |
+| Candidate SHA | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` |
+| Returned `producer.build_revision` | `50862a352626ea38d2fbb36f2ff0ecfc667266d0` (exact match, confirmed live in every tool response below) |
+| Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
+| Observed initialization/protocol version | `2025-06-18` (negotiated mode; client sends no `mcp-method`/`mcp-name` markers at any point) |
+| Session IDs issued / used / reuse | None observed (no `mcp-session-id` header in any client process's traffic) |
+| Qualification date | 2026-09-13 |
+
+Configuration mechanism, official-docs re-verification, and model/provider are unchanged from the
+original qualification (see Historical record below) and are not repeated in full here.
+
+### Pre-client state (spec §6.2/§6.3)
+
+`examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
+`50862a352626ea38d2fbb36f2ff0ecfc667266d0`, captured before `codex mcp add`/`get` or any client
+interaction. Fixture checker `COMPLETE`, `mismatches: []`,
+`snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
+revision fence `R = 9`.
+
+### Attempt record (spec §6.5/§6.6)
+
+| Cycle | Attempt | Classification | Outcome |
+|---|---|---|---|
+| 1 | 1 | — | Full success on the first attempt, using the corrected invocation shape from the original qualification (`--skip-git-repo-check` included from the start this time): `codex exec --json --skip-git-repo-check -s read-only -C <scratch-dir> - < prompt.txt` (Appendix A.1 fixed prompt). Called `get_architecture_drift` then `get_evidence` twice (once per finding), using the exact `snapshot_id`/`evidence_refs` returned, and reported the AIP qualifications verbatim without reinterpreting `NOT_OBSERVED_IN_WINDOW`. |
+
+One valid client attempt used, well within the LLM-mediated budget of 2 (spec §6.5). No
+infrastructure-invalidated runs or client-control failures occurred at any point in this reconfirmation.
+
+### Required successful protocol workflow (spec §6.8)
+
+Evidence combines the `codex exec --json` structured event stream (for tool-call inputs/outputs) with
+a passive `tcpdump` capture of the actual `POST /mcp` traffic on the loopback/bridge path (observational
+only — no header/body/method inserted, rewritten, or simulated, per spec §6.14), cross-checked against
+each other.
+
+| # | Requirement | Evidence |
+|---|---|---|
+| 1 | Initialization/negotiation | Passive capture: `POST /mcp` with body `{"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"codex-mcp-client","title":"Codex","version":"0.154.0"}}}` → `200`, followed by `notifications/initialized` → `202`. Repeated identically in a second, independent client process (see Reconnect below). |
+| 2 | Tool discovery | Passive capture: `POST /mcp` `{"method":"tools/list", ...}` → `200`, full tool schemas returned. |
+| 3 | Exactly three AIP tools discovered | The `tools/list` response body names exactly `get_architecture_drift`, `get_evidence`, `get_service_dependencies` — no others. |
+| 4 | `get_architecture_drift` | `codex exec` JSON stream: `mcp_tool_call` item, `server: aip`, `tool: get_architecture_drift`, `status: completed`, request `{"service_id":"service:order-service","observation_context":{"environment":"demo","window_start":"2026-08-26T00:00:00Z","window_end":"2026-08-27T00:00:00Z"}}`. |
+| 5 | Deterministic structured drift result | Response `outcome: PARTIAL`; claims resolve to `queue:unused-q` → `NOT_OBSERVED_IN_WINDOW` and `service:legacypricingservice` (via `GET /pricing/{sku}`) → `OBSERVED_ONLY` — the exact spec §6.9 expected result. |
+| 6 | `get_evidence` using returned `evidence_refs` | Two `mcp_tool_call` items, `tool: get_evidence`, each using an `evidence_refs` value taken verbatim from the drift response (`evidence:asyncapi:order-service`, `evidence:otel:demo:2026-08-26:bfae54276215`). Both `outcome: ANSWERED`, `missing_evidence_refs: []`. |
+| 7 | Same snapshot used | All three tool calls carry `snapshot.snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`. |
+| 8 | Disconnect/stop | `codex exec` is one-shot: the process exits after its turn completes, closing its MCP connection. |
+| 9 | Reconnect/reinitialize | A second, independent `codex exec` process (fresh prompt, fresh `thread_id`) performed its own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch (identical shape to attempt 1's, confirmed in the same passive capture). |
+| 10 | One read-only tool works after reconnect | That second process's `get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`) and `producer.build_revision = 50862a352626ea38d2fbb36f2ff0ecfc667266d0` — again the exact candidate SHA. |
+
+The passive capture also directly reconfirms the I3.3 fix still holds at this new candidate: every
+client process's `initialize` handshake is preceded by an OAuth-discovery probe sequence
+(`.well-known/oauth-protected-resource`, etc., all cleanly `404`/`405` — ordinary, harmless Codex CLI
+behavior when no auth is configured, unrelated to either transport fix), and `mcp-protocol-version` is
+present on every negotiated request Codex sends (32 occurrences across the capture) — Codex CLI's own
+traffic shape is unaffected by, and does not exercise, either the I3.3 direct-marker or the I3.4
+negotiated missing-header code paths.
+
+### Sanitization statement (spec §6.15)
+
+The passive capture and `codex exec --json` transcripts contained no authorization headers, bearer
+tokens, cookies, API keys, refresh tokens, account identifiers, email addresses, personal user
+identifiers, raw system prompts, or unrelated conversation/traffic (this AIP demo endpoint requires no
+credential; `codex mcp add`/`get` confirmed `bearer_token_env_var: -`, `http_headers: -` throughout).
+The `User-Agent: codex-mcp-client/0.154.0` string is retained as legitimate client-version evidence,
+not a personal identifier. Raw `.pcap` and JSON transcript files were ephemeral, used only to produce
+the excerpts and summaries in this trace, and were not retained beyond this qualification run. The
+same statement applies to the Appendix A.2 UX observation's verbatim agent answer recorded below.
+
+### Post-client state (spec §6.12/§6.15)
+
+| Field | Value |
+|---|---|
+| `revision_after` | `9` — equal to `revision_before` (`R = 9`). This check was taken immediately after both processes covered by the protocol-qualification/reconnect evidence above (3 tool calls in attempt 1, 1 tool call in the reconnect process) and **before** the separate Appendix A.2 UX run below. |
+| Fixture-check result | `COMPLETE`, `mismatches: []`, `actual_snapshot_id` unchanged (`aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`), matching the pre-client snapshot `S`. Same timing as `revision_after`: taken before the UX run. |
+
+As with the original qualification, this tuple's own fence/fixture recheck covers the protocol-
+qualification/reconnect evidence above but **not** the separate Appendix A.2 UX run below (2 more tool
+calls, executed afterward in its own fresh process). The release-level zero-write claim for that
+portion rests on spec §6.12's explicit joint-support model (fence measurement + the automated
+zero-write test suite), as before.
+
+### Mandatory separate UX observation (spec §7.2, Appendix A.2)
+
+Run in a fresh `codex exec` process/context, separate from the protocol-qualification run above, and
+after this tuple's own post-client revision-fence/fixture recheck.
+
+**Prompt used:** the fixed Appendix A.2 prompt, verbatim.
+
+**Where visible:**
+
+| | |
+|---|---|
+| Model/provider | `gpt-5.6-sol` (OpenAI) — Codex CLI's configured default model, `reasoning_effort = medium`; not overridden by `-m` in this run |
+| Agent mode | `codex exec` (non-interactive), `-s read-only` sandbox |
+| Tool approval mode | Non-interactive default; no approval prompt was requested or reached |
+
+**§7.2 result table** (`YES` / `NO` / `PARTIAL` / `NOT_OBSERVED`):
+
+| Observation | Result |
+|---|---|
+| selected AIP | `YES` |
+| called `get_architecture_drift` | `YES` |
+| found `LegacyPricingService` | `YES` |
+| preserved `OBSERVED_ONLY` | `YES` |
+| found `unused-q` | `YES` |
+| preserved `NOT_OBSERVED_IN_WINDOW` | `YES` |
+| called `get_evidence` | `YES` |
+| preserved the same snapshot | `YES` |
+| distinguished evidence from inference | `YES` |
+| avoided unused/dead/obsolete overclaim | `YES` |
+
+**Unedited observed outcome** (the agent's final message, verbatim — sanitization statement above):
+
+> AIP found **2 architecture-drift findings** for `service:order-service` in `demo` during
+> `2026-08-26T00:00:00Z`–`2026-08-27T00:00:00Z`.
+>
+> Snapshot: `aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`
+>
+> ### 1. Declared send to `queue:unused-q` was not observed
+>
+> - **Qualification:** `NOT_OBSERVED_IN_WINDOW`, with `SUFFICIENT` coverage.
+> - **Resolved evidence:** `evidence:asyncapi:order-service`
+>   - Type: declared AsyncAPI evidence
+>   - Source: `examples/order-service/asyncapi.yaml`
+>   - Establishes that `service:order-service` `SENDS` to `queue:unused-q`.
+>   - It also establishes that the queue carries `message:UnusedMessage`, conforming to
+>     `schema:UnusedMessage`.
+> - **What AIP established:** The direct asynchronous dependency on `queue:unused-q` is declared, and
+>   AIP classified it as not observed during the specified window with sufficient observation
+>   coverage.
+> - **Boundary:** AIP did **not** establish why no activity was observed, whether the queue is unused
+>   generally, or which service consumes from it. AIP explicitly reported that no single consumer
+>   service was evidenced, so it retained the queue itself as the direct target
+>   (`DIRECT_TARGET_FALLBACK`).
+>
+> Claim: `aip:claim:v1:ca0dd73ba391552edd6d2cc06cddd919a8af97f362cdb47392e78325219fd612`
+>
+> ### 2. Observed call to `LegacyPricingService` had no declared counterpart
+>
+> - **Qualification:** `OBSERVED_ONLY`.
+> - **Resolved evidence:**
+>   - `evidence:otel:demo:2026-08-26:bfae54276215` establishes that `service:order-service` called
+>     `GET /pricing/{sku}`.
+>   - `evidence:otel:demo:2026-08-26:29d4976aeaf9` establishes that `service:legacypricingservice`
+>     provides that operation.
+>   - Both are OpenTelemetry observations covering the requested window. Each reports one observation
+>     at `2026-08-26T12:00:00.044222Z`, correlated using `CLIENT_SERVER`.
+> - **What AIP established:** AIP resolved the observed synchronous HTTP dependency to
+>   `service:legacypricingservice` and classified it as observed-only in this snapshot.
+> - **Boundary:** AIP did **not** establish the request's success, payload, latency, business purpose,
+>   deployment version, or whether the missing declaration was intentional. The evidence supports one
+>   correlated observation, not a claim about call frequency beyond that observation.
+>
+> Claim: `aip:claim:v1:8c43c7b5ba7783da9b188afd0e28a72d0570d3a48a9772c5911ce8469e89bbd0`
+>
+> The drift query's overall outcome was `PARTIAL` solely because the consumer identity behind
+> `queue:unused-q` could not be uniquely resolved. All three evidence references were successfully
+> resolved using the same snapshot.
+
+This is observational product evidence only, not a semantic release gate (spec §7.2).
+
+### Disposition
+
+- `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 50862a352626ea38d2fbb36f2ff0ecfc667266d0`.
+- Same-snapshot, reconnect, and exact-tool-count requirements independently confirmed via passive
+  capture, not inferred from the `codex exec` transcript alone. Zero-write confirmed by direct
+  revision-fence measurement for the protocol-qualification/reconnect evidence, and by the automated
+  zero-write test suite for the separate UX run's two calls.
+- One clean valid attempt, no cycle failures — the `--skip-git-repo-check` lesson from the original
+  qualification (see Historical record) was applied from the start this time.
+- This tuple's traffic does not exercise either the I3.3 direct-marker allowlist or the I3.4
+  negotiated missing-header fallback code path (see the protocol-workflow note above); this
+  reconfirmation exists to satisfy spec §4.4's candidate-affecting-change requirement, not because
+  either fix was expected to change Codex CLI's own observed behavior — and it did not.
+
+---
+
+## Historical record: original qualification against invalidated candidate `6461db6d51ee29e9c973e62b005aa84d5d95c077`
+
+Preserved unedited below, for the same reason the Claude Code trace preserves its own historical
+record: earlier valid-client evidence is not hidden by only reporting the latest reconfirmation.
+
+### Tuple identity (as recorded at the time)
 
 | Field | Value |
 |---|---|
@@ -29,14 +228,14 @@ the new, post-fix `RELEASE_CANDIDATE_SHA` rather than carried forward by asserti
 | Configuration mechanism | `codex mcp add aip --url http://localhost:8000/mcp` (per `examples/mcp-clients/codex.md`), global scope (`~/.codex/config.toml`) |
 | Transport | Streamable HTTP |
 | Approval mode | `codex exec -s read-only` (non-interactive); no approval prompt was requested or reached — MCP tool calls are read-only network calls, not sandboxed shell commands, so they are not gated by the exec sandbox/approval system |
-| Candidate SHA | `6461db6d51ee29e9c973e62b005aa84d5d95c077` |
+| Candidate SHA | `6461db6d51ee29e9c973e62b005aa84d5d95c077` (**INVALIDATED** — see the rc.2 candidate-preparation record) |
 | Returned `producer.build_revision` | `6461db6d51ee29e9c973e62b005aa84d5d95c077` (exact match, confirmed live in every tool response below) |
 | Pinned MCP SDK version (AIP side) | `mcp==2.2.0` |
 | Observed initialization/protocol version | `2025-06-18` (negotiated mode; client sends no `mcp-method`/`mcp-name` markers at any point) |
 | Session IDs issued / used / reuse | None observed (no `mcp-session-id` header in either client process's traffic) |
 | Qualification date | 2026-09-13 |
 
-## Configuration re-verification (spec §6.4)
+### Configuration re-verification (spec §6.4)
 
 | | |
 |---|---|
@@ -44,14 +243,14 @@ the new, post-fix `RELEASE_CANDIDATE_SHA` rather than carried forward by asserti
 | Verification date | 2026-09-13 (this run) |
 | Result | PASS — the official docs page does document a `--url` flag on `codex mcp add` (`codex mcp add example --url https://mcp.example.com --oauth-client-id my-client`, shown under the OAuth pre-registered-client-ID section), and the installed `codex-cli 0.154.0`'s own `--help` documents the same flag (`--url <URL>  URL for a streamable HTTP MCP server`) independent of OAuth. `examples/mcp-clients/codex.md`'s claim is accurate. A narrower distinction worth noting: the docs page's only worked `--url` example includes `--oauth-client-id`; it does not show the simpler unauthenticated form used here (`--url` alone, no OAuth flags) as its own example. This qualification run used and confirmed the unauthenticated form works exactly as `--help` describes — not release-blocking, and not a documentation defect (an initial verification pass using a web-summarization tool missed the OAuth-section example on the first two attempts; corrected here by inspecting the raw page source directly). |
 
-## Pre-client state (spec §6.2/§6.3)
+### Pre-client state (spec §6.2/§6.3)
 
 `examples/runtime-demo/mcp-demo.sh --serve` with `BUILD_REVISION`/`RELEASE_CANDIDATE_SHA` pinned to
 `6461db6d51ee29e9c973e62b005aa84d5d95c077`. Fixture checker `COMPLETE`, `mismatches: []`,
 `snapshot_id = aip:snapshot:v1:685a34157b6842b00d7130b8490df63060c3d80871c2ed6f56cd9206e62342d8`,
 revision fence `R = 9`.
 
-## Attempt record (spec §6.5/§6.6)
+### Attempt record (spec §6.5/§6.6)
 
 | Cycle | Attempt | Classification | Outcome |
 |---|---|---|---|
@@ -70,7 +269,7 @@ infrastructure-invalidated runs occurred at any point (cycle 1's failure is a cl
 not an AIP/server/network/fixture prerequisite failure, so §6.5's separate infrastructure-retry-budget
 accounting does not apply to it).
 
-## Required successful protocol workflow (spec §6.8)
+### Required successful protocol workflow (spec §6.8)
 
 Evidence combines the `codex exec --json` structured event stream (for tool-call inputs/outputs) with
 a passive `tcpdump` capture of the actual `POST /mcp` traffic on the loopback/bridge path (observational
@@ -90,7 +289,7 @@ each other.
 | 9 | Reconnect/reinitialize | Two further, independent `codex exec` processes (fresh prompts, fresh `thread_id`s each) each performed their own `initialize` → `notifications/initialized` → `tools/list` sequence from scratch (identical shape to cycle 2's, confirmed in the same passive capture): the first (`get_service_dependencies`, malformed `service_id` on its first call, corrected on a second call within the same process — 2 tool calls, both `status: completed`) at ~9.5-13.4s into the capture, the second (single well-formed `get_service_dependencies` call) at ~41.8-53.4s into the capture. |
 | 10 | One read-only tool works after reconnect | The second reconnect process's `get_service_dependencies` call for `service:order-service` (same observation window) returned `outcome: PARTIAL` with 4 dependency claims (`unused-q` `NOT_OBSERVED_IN_WINDOW`, `legacypricingservice` `OBSERVED_ONLY`, `payment-service` `CONFIRMED`, `product-service` `CONFIRMED`) and `producer.build_revision = 6461db6d51ee29e9c973e62b005aa84d5d95c077` — again the exact candidate SHA. (The first reconnect process's corrected call also succeeded, returning `NOT_ANSWERED`/`OBSERVATION_CONTEXT_REQUIRED` for a call that omitted the required observation context — a valid, well-formed AIP business response, not a transport failure; not used as the primary reconnect citation only because it demonstrates a prompt-authoring gap on the operator's side rather than a clean positive result.) |
 
-## Sanitization statement (spec §6.15)
+### Sanitization statement (spec §6.15)
 
 The passive capture and `codex exec --json` transcripts contained no authorization headers, bearer
 tokens, cookies, API keys, refresh tokens, account identifiers, email addresses, personal user
@@ -103,7 +302,7 @@ same statement applies to the Appendix A.2 UX observation's verbatim agent answe
 contains only architecture-fact content returned by AIP's own tools, with no headers, tokens,
 identifiers, or unrelated content of any kind.
 
-## Post-client state (spec §6.12/§6.15)
+### Post-client state (spec §6.12/§6.15)
 
 | Field | Value |
 |---|---|
@@ -122,7 +321,7 @@ run's two calls used only `get_architecture_drift` and `get_evidence`, both alre
 for every direct/negotiated routing path by `tests/integration/test_mcp_i1_zero_write_completion_gate.py`
 independent of which client issues the call.
 
-## Mandatory separate UX observation (spec §7.2, Appendix A.2)
+### Mandatory separate UX observation (spec §7.2, Appendix A.2)
 
 Run in a fresh `codex exec` process/context, separate from the protocol-qualification runs above, and
 after this tuple's own post-client revision-fence/fixture recheck (see note above).
@@ -248,7 +447,7 @@ This is observational product evidence only, not a semantic release gate (spec �
 above happens to be a strong one, but the UX observation's contract-complete recording — not that
 quality — is what §7.2 requires.
 
-## Disposition
+### Disposition (as recorded at the time)
 
 - `QUALIFIED` against `RELEASE_CANDIDATE_SHA = 6461db6d51ee29e9c973e62b005aa84d5d95c077`.
 - Same-snapshot, reconnect, and exact-tool-count requirements independently confirmed via passive
