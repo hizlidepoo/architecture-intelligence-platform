@@ -24,6 +24,7 @@ from app.architecture_intelligence.contracts import (
     ObservationContextRef,
     Outcome,
     Producer,
+    SCHEMA_VERSION,
     ServiceDependenciesData,
     SnapshotRef,
 )
@@ -284,7 +285,7 @@ class ArchitectureIntelligenceService:
         )
 
         return ArchitectureAnswer[ServiceDependenciesData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_TOOL_NAME,
             outcome=outcome,
@@ -305,7 +306,7 @@ class ArchitectureIntelligenceService:
         message: str,
     ) -> ArchitectureAnswer[ServiceDependenciesData]:
         return ArchitectureAnswer[ServiceDependenciesData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_TOOL_NAME,
             outcome=Outcome.NOT_ANSWERED,
@@ -381,7 +382,7 @@ class ArchitectureIntelligenceService:
         )
 
         return ArchitectureAnswer[ArchitectureDriftData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_DRIFT_TOOL_NAME,
             outcome=outcome,
@@ -402,7 +403,7 @@ class ArchitectureIntelligenceService:
         message: str,
     ) -> ArchitectureAnswer[ArchitectureDriftData]:
         return ArchitectureAnswer[ArchitectureDriftData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_DRIFT_TOOL_NAME,
             outcome=Outcome.NOT_ANSWERED,
@@ -476,7 +477,7 @@ class ArchitectureIntelligenceService:
             ]
 
         return ArchitectureAnswer[EvidenceData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_EVIDENCE_TOOL_NAME,
             outcome=outcome,
@@ -492,7 +493,7 @@ class ArchitectureIntelligenceService:
         self, *, snapshot_ref: SnapshotRef | None, code: LimitationCode, message: str
     ) -> ArchitectureAnswer[EvidenceData]:
         return ArchitectureAnswer[EvidenceData](
-            schema_version="0.4",
+            schema_version=SCHEMA_VERSION,
             producer=self._producer,
             tool=_EVIDENCE_TOOL_NAME,
             outcome=Outcome.NOT_ANSWERED,
