@@ -31,6 +31,9 @@ _ENVIRONMENT_PATTERN = r"^[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]*[^\s\x00-\x1f\x7
 
 _MAX_OBSERVATION_WINDOW = timedelta(days=31)
 
+ArchitectureSchemaVersion = Literal["0.4"]
+ARCHITECTURE_SCHEMA_VERSION: ArchitectureSchemaVersion = get_args(ArchitectureSchemaVersion)[0]
+
 
 class Outcome(StrEnum):
     ANSWERED = "ANSWERED"
@@ -599,7 +602,7 @@ class ArchitectureAnswer[T: BaseModel](BaseModel):
         frozen=True, extra="forbid", json_schema_extra=_architecture_answer_schema_extra
     )
 
-    schema_version: Literal["0.4"]
+    schema_version: ArchitectureSchemaVersion
     producer: Producer
     tool: Literal["get_service_dependencies", "get_evidence", "get_architecture_drift"]
     outcome: Outcome
